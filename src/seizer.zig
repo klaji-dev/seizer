@@ -1,40 +1,66 @@
 // seizer sub libraries
+pub const colormaps = @import("./colormaps.zig");
 pub const geometry = @import("./geometry.zig");
 pub const input = @import("./input.zig");
-pub const mem = @import("./mem.zig");
 pub const ui = @import("./ui.zig");
 
 pub const Canvas = @import("./Canvas.zig");
 pub const Display = @import("./Display.zig");
-pub const Graphics = @import("./Graphics.zig");
-
-pub const NinePatch = @import("./NinePatch.zig");
-pub const Platform = @import("./Platform.zig");
-
-pub const colormaps = @import("./colormaps.zig");
+pub const Image = @import("./Image.zig");
 
 // re-exported libraries
 pub const tvg = @import("tvg");
+pub const xev = @import("xev");
 pub const zigimg = @import("zigimg");
 
-pub const main = platform.main;
-
-pub const platform: Platform = if (builtin.os.tag == .linux or builtin.os.tag.isBSD())
-    Platform.linuxbsd.PLATFORM
-else if (builtin.os.tag == .wasi)
-    Platform.wasm.PLATFORM
-else
-    @compileError("Unsupported platform " ++ @tagName(builtin.os.tag));
-
-// Non-core seizer sub libraries. This is code that is mostly used to implement seizer, and is not intended for external use.
-pub const @"dynamic-library-utils" = @import("dynamic-library-utils");
-pub const meta = @import("./meta.zig");
-
+/// Seizer version
 pub const version = std.SemanticVersion{
     .major = 0,
     .minor = 1,
     .patch = 0,
 };
+
+//
+const seizer = @This();
+
+var loop: xev.Loop = undefined;
+var deinit_fn: ?DeinitFn = null;
+
+pub fn main() anyerror!void {
+    const root = @import("root");
+
+    if (!@hasDecl(root, "init")) {
+        @compileError("root module must contain init function");
+    }
+
+    loop = try xev.Loop.init(.{});
+    defer loop.deinit();
+
+    // Call root module's `init()` function
+    root.init() catch |err| {
+        std.debug.print("{s}\n", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace| {
+            std.debug.dumpStackTrace(trace.*);
+        }
+        return;
+    };
+    defer {
+        if (deinit_fn) |deinit| {
+            deinit();
+        }
+    }
+
+    try loop.run(.until_done);
+}
+
+pub fn getLoop() *xev.Loop {
+    return &loop;
+}
+
+pub const DeinitFn = *const fn () void;
+pub fn setDeinit(new_deinit_fn: ?seizer.DeinitFn) void {
+    deinit_fn = new_deinit_fn;
+}
 
 const builtin = @import("builtin");
 const std = @import("std");

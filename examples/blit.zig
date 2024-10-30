@@ -5,7 +5,7 @@ var display: seizer.Display = undefined;
 var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
-var font: seizer.Canvas.Font = undefined;
+var image: seizer.Image = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
@@ -13,21 +13,15 @@ pub fn init() !void {
     try display.initToplevelSurface(&toplevel_surface, .{});
     toplevel_surface.setOnRender(&render_listener, onRender, null);
 
-    font = try seizer.Canvas.Font.fromFileContents(
-        gpa.allocator(),
-        @embedFile("./assets/PressStart2P_8.fnt"),
-        &.{
-            .{ .name = "PressStart2P_8.png", .contents = @embedFile("./assets/PressStart2P_8.png") },
-        },
-    );
-    errdefer font.deinit();
+    image = try seizer.Image.fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
+    errdefer image.free(gpa.allocator());
 
     seizer.setDeinit(deinit);
 }
 
 /// This is a global deinit, not window specific. This is important because windows can hold onto Graphics resources.
 fn deinit() void {
-    font.deinit();
+    image.free(gpa.allocator());
     toplevel_surface.deinit();
     display.deinit();
     _ = gpa.deinit();
@@ -39,10 +33,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     var framebuffer = try surface.getBuffer();
     framebuffer.clear(.{ 0.5, 0.5, 0.7, 1.0 });
 
-    var pos = [2]f32{ 50, 50 };
-    pos[1] += framebuffer.canvas().writeText(&font, pos, "Hello, world!", .{})[1];
-    pos[1] += framebuffer.canvas().writeText(&font, pos, "Hello, world!", .{ .color = .{ 0x00, 0x00, 0x00, 0xFF } })[1];
-    pos[1] += framebuffer.canvas().printText(&font, pos, "pos = <{}, {}>", .{ pos[0], pos[1] }, .{})[1];
+    framebuffer.canvas().interface.blit(framebuffer.canvas().ptr, .{ 50, 50 }, image);
 
     try surface.present(framebuffer);
 }

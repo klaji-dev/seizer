@@ -28,8 +28,8 @@
             .hash = "12208582ac218c676b37763dd67d25c79ea3808d0c73369663e0e4f9a2b0040ed73e",
         },
         .shimizu = .{
-            .url = "https://git.sr.ht/~geemili/shimizu/archive/1b8aa12dc7239b7bc39b09d1e8c400d5032709fe.tar.gz",
-            .hash = "1220159405d52cdf18f6a1c3ab9bb510d5f4dc7b9c2637a04a2c9b2c4f05e681592f",
+            .url = "https://git.sr.ht/~geemili/shimizu/archive/a39eb4935c36b1ede38b34491f8eda93af01d4fe.tar.gz",
+            .hash = "12202790861db271425630f57bef87fde01e3a0d043e6dbaadbe28d22986bbf3968c",
         },
     },
 }
