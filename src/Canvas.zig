@@ -19,6 +19,10 @@ pub const RectOptions = struct {
     color: [4]f64 = .{ 1, 1, 1, 1 },
 };
 
+pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.Image, options: RectOptions) void {
+    return this.interface.texture_rect(this.ptr, dst_pos, dst_size, image, options);
+}
+
 pub const LineOptions = struct {
     depth: f64 = 0.5,
     width: f64 = 1,
