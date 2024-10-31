@@ -9,7 +9,7 @@ pub const Interface = struct {
     /// The size of the renderable area
     size: *const fn (?*anyopaque) [2]f64,
     blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.Image) void,
-    // texture_rect: *const fn (?*anyopaque, pos: [2]f64, size: [2]f64, texture: *const Texture, options: RectOptions) void,
+    texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.Image, options: RectOptions) void,
     // fill_rect: *const fn (?*anyopaque, pos: [2]f64, size: [2]f64, options: RectOptions) void,
     // line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };

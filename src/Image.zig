@@ -62,35 +62,10 @@ pub fn composite(dst: @This(), src: @This()) void {
         const dst_row = dst.pixels[y * dst.stride ..][0..dst.size[0]];
         const src_row = src.pixels[y * src.stride ..][0..src.size[0]];
         for (dst_row, src_row) |*dst_pixel, src_pixel| {
-            const src_pixel_f32: [4]f32 = .{
-                @as(f32, @floatFromInt(src_pixel[0])) / std.math.maxInt(u8),
-                @as(f32, @floatFromInt(src_pixel[1])) / std.math.maxInt(u8),
-                @as(f32, @floatFromInt(src_pixel[2])) / std.math.maxInt(u8),
-                @as(f32, @floatFromInt(src_pixel[3])) / std.math.maxInt(u8),
-            };
-            const dst_pixel_f32: [4]f32 = .{
-                @as(f32, @floatFromInt(dst_pixel[0])) / std.math.maxInt(u8),
-                @as(f32, @floatFromInt(dst_pixel[1])) / std.math.maxInt(u8),
-                @as(f32, @floatFromInt(dst_pixel[2])) / std.math.maxInt(u8),
-                @as(f32, @floatFromInt(dst_pixel[3])) / std.math.maxInt(u8),
-            };
-
-            const src_mult = src_pixel_f32[3];
-            const dst_mult = dst_pixel_f32[3] * (1.0 - src_pixel_f32[3]);
-
-            const out_alpha = src_mult + dst_mult;
-            const out_rgb_f32 = [3]f32{
-                (src_pixel_f32[0] * src_mult + dst_pixel_f32[0] * dst_mult) / out_alpha,
-                (src_pixel_f32[1] * src_mult + dst_pixel_f32[1] * dst_mult) / out_alpha,
-                (src_pixel_f32[2] * src_mult + dst_pixel_f32[2] * dst_mult) / out_alpha,
-            };
-
-            dst_pixel.* = .{
-                @intFromFloat(out_rgb_f32[0] * std.math.maxInt(u8)),
-                @intFromFloat(out_rgb_f32[1] * std.math.maxInt(u8)),
-                @intFromFloat(out_rgb_f32[2] * std.math.maxInt(u8)),
-                @intFromFloat(out_alpha * std.math.maxInt(u8)),
-            };
+            dst_pixel.* = seizer.color.compositeAOverB(
+                src_pixel,
+                dst_pixel.*,
+            );
         }
     }
 }
@@ -168,5 +143,13 @@ pub fn setPixel(this: @This(), pos: [2]i32, color: Pixel) void {
     this.pixels[@intCast(posu[1] * this.stride + posu[0])] = color;
 }
 
+pub fn getPixel(this: @This(), pos: [2]i32) Pixel {
+    std.debug.assert(pos[0] >= 0 or pos[0] < this.size[0]);
+    std.debug.assert(pos[1] >= 0 or pos[1] < this.size[1]);
+    const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
+    return this.pixels[@intCast(posu[1] * this.stride + posu[0])];
+}
+
 const std = @import("std");
+const seizer = @import("./seizer.zig");
 const zigimg = @import("zigimg");

@@ -1,4 +1,5 @@
 // seizer sub libraries
+pub const color = @import("./color.zig");
 pub const colormaps = @import("./colormaps.zig");
 pub const geometry = @import("./geometry.zig");
 pub const input = @import("./input.zig");

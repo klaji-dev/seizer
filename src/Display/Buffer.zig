@@ -33,6 +33,7 @@ pub fn canvas(this: *@This()) seizer.Canvas {
 const CANVAS_INTERFACE: *const seizer.Canvas.Interface = &.{
     .size = canvas_size,
     .blit = canvas_blit,
+    .texture_rect = canvas_textureRect,
 };
 
 pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
@@ -72,6 +73,44 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.Imag
     const dest = this.image().slice(dest_offset, src_size);
 
     dest.composite(src);
+}
+
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.Image, _: seizer.Canvas.RectOptions) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+
+    const start_pos = [2]u32{
+        @intFromFloat(@floor(@max(@min(dst_pos[0], dst_pos[0] + dst_size[0]), 0))),
+        @intFromFloat(@floor(@max(@min(dst_pos[1], dst_pos[1] + dst_size[1]), 0))),
+    };
+    const end_pos = [2]u32{
+        @min(@as(u32, @intFromFloat(@floor(@max(dst_pos[0], dst_pos[0] + dst_size[0], 0)))), this.size[0]),
+        @min(@as(u32, @intFromFloat(@floor(@max(dst_pos[1], dst_pos[1] + dst_size[1], 0)))), this.size[1]),
+    };
+
+    const src_size = [2]f64{
+        @floatFromInt(src_image.size[0]),
+        @floatFromInt(src_image.size[1]),
+    };
+
+    for (start_pos[1]..end_pos[1]) |y| {
+        for (start_pos[0]..end_pos[0]) |x| {
+            const pos = [2]f64{ @floatFromInt(x), @floatFromInt(y) };
+            const texture_coord = [2]f64{
+                ((pos[0] - dst_pos[0]) / dst_size[0]) * src_size[0],
+                ((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1],
+            };
+            const dst_pixel = this.image().getPixel(.{ @intCast(x), @intCast(y) });
+            const src_pixel = src_image.getPixel(.{
+                @intFromFloat(texture_coord[0]),
+                @intFromFloat(texture_coord[1]),
+            });
+            // TODO: composite
+            this.image().setPixel(.{ @intCast(x), @intCast(y) }, seizer.color.compositeAOverB(
+                src_pixel,
+                dst_pixel,
+            ));
+        }
+    }
 }
 
 const seizer = @import("../seizer.zig");

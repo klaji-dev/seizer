@@ -4,6 +4,7 @@ const Builder = std.Build;
 const Example = enum {
     clear,
     blit,
+    texture_rect,
     bitmap_font,
     sprite_batch,
     tinyvg,
