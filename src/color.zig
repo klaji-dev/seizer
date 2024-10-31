@@ -9,4 +9,22 @@ pub fn compositeAOverB(a: [4]u8, b: [4]u8) [4]u8 {
     return .{ @intCast(out[0]), @intCast(out[1]), @intCast(out[2]), @intCast(out_alpha[0]) };
 }
 
+pub fn fx4FromUx4(F: type, U: type, a: [4]U) [4]F {
+    return .{
+        @as(F, @floatFromInt(a[0])) / std.math.maxInt(U),
+        @as(F, @floatFromInt(a[1])) / std.math.maxInt(U),
+        @as(F, @floatFromInt(a[2])) / std.math.maxInt(U),
+        @as(F, @floatFromInt(a[3])) / std.math.maxInt(U),
+    };
+}
+
+pub fn ux4FromFx4(U: type, F: type, a: [4]F) [4]U {
+    return .{
+        @intFromFloat(a[0] * std.math.maxInt(U)),
+        @intFromFloat(a[1] * std.math.maxInt(U)),
+        @intFromFloat(a[2] * std.math.maxInt(U)),
+        @intFromFloat(a[3] * std.math.maxInt(U)),
+    };
+}
+
 const std = @import("std");

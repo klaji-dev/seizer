@@ -7,9 +7,9 @@
 allocator: std.mem.Allocator,
 pages: std.AutoHashMapUnmanaged(u32, []const u8),
 glyphs: GlyphMap,
-lineHeight: f32,
-base: f32,
-scale: [2]f32,
+lineHeight: f64,
+base: f64,
+scale: [2]f64,
 
 pub const Page = struct {
     filename: []const u8,
@@ -18,10 +18,10 @@ pub const Page = struct {
 const GlyphMap = std.AutoHashMapUnmanaged(Glyph.Id, Glyph);
 pub const Glyph = struct {
     page: u32,
-    pos: [2]f32,
-    size: [2]f32,
-    offset: [2]f32,
-    xadvance: f32,
+    pos: [2]f64,
+    size: [2]f64,
+    offset: [2]f64,
+    xadvance: f64,
 
     pub const Id = u32;
 };
@@ -33,10 +33,10 @@ pub fn parse(allocator: std.mem.Allocator, font_contents: []const u8) !@This() {
     defer pages.deinit(allocator);
     var glyphs = GlyphMap{};
     defer glyphs.deinit(allocator);
-    var lineHeight: f32 = undefined;
-    var base: f32 = undefined;
-    var scaleW: f32 = 0;
-    var scaleH: f32 = 0;
+    var lineHeight: f64 = undefined;
+    var base: f64 = undefined;
+    var scaleW: f64 = 0;
+    var scaleH: f64 = 0;
     var expected_num_pages: usize = 0;
 
     var next_page_id: u32 = 0;
@@ -49,13 +49,13 @@ pub fn parse(allocator: std.mem.Allocator, font_contents: []const u8) !@This() {
 
         if (std.mem.eql(u8, "char", kind)) {
             var id: ?u32 = null;
-            var x: f32 = undefined;
-            var y: f32 = undefined;
-            var width: f32 = undefined;
-            var height: f32 = undefined;
-            var xoffset: f32 = undefined;
-            var yoffset: f32 = undefined;
-            var xadvance: f32 = undefined;
+            var x: f64 = undefined;
+            var y: f64 = undefined;
+            var width: f64 = undefined;
+            var height: f64 = undefined;
+            var xoffset: f64 = undefined;
+            var yoffset: f64 = undefined;
+            var xadvance: f64 = undefined;
             var page: u32 = undefined;
 
             while (pair_iter.next()) |pair| {
@@ -66,19 +66,19 @@ pub fn parse(allocator: std.mem.Allocator, font_contents: []const u8) !@This() {
                 if (std.mem.eql(u8, "id", key)) {
                     id = try std.fmt.parseInt(u32, value, 10);
                 } else if (std.mem.eql(u8, "x", key)) {
-                    x = try std.fmt.parseFloat(f32, value);
+                    x = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "y", key)) {
-                    y = try std.fmt.parseFloat(f32, value);
+                    y = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "width", key)) {
-                    width = try std.fmt.parseFloat(f32, value);
+                    width = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "height", key)) {
-                    height = try std.fmt.parseFloat(f32, value);
+                    height = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "xoffset", key)) {
-                    xoffset = try std.fmt.parseFloat(f32, value);
+                    xoffset = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "yoffset", key)) {
-                    yoffset = try std.fmt.parseFloat(f32, value);
+                    yoffset = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "xadvance", key)) {
-                    xadvance = try std.fmt.parseFloat(f32, value);
+                    xadvance = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "page", key)) {
                     page = try std.fmt.parseInt(u32, value, 10);
                 } else if (std.mem.eql(u8, "chnl", key)) {
@@ -106,13 +106,13 @@ pub fn parse(allocator: std.mem.Allocator, font_contents: []const u8) !@This() {
                 const value = kv_iter.rest();
 
                 if (std.mem.eql(u8, "lineHeight", key)) {
-                    lineHeight = try std.fmt.parseFloat(f32, value);
+                    lineHeight = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "base", key)) {
-                    base = try std.fmt.parseFloat(f32, value);
+                    base = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "scaleW", key)) {
-                    scaleW = try std.fmt.parseFloat(f32, value);
+                    scaleW = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "scaleH", key)) {
-                    scaleH = try std.fmt.parseFloat(f32, value);
+                    scaleH = try std.fmt.parseFloat(f64, value);
                 } else if (std.mem.eql(u8, "packed", key)) {
                     // TODO
                 } else if (std.mem.eql(u8, "pages", key)) {
@@ -167,7 +167,7 @@ pub fn deinit(this: *@This()) void {
     this.glyphs.deinit(this.allocator);
 }
 
-pub fn textSize(glyphs: *const GlyphMap, line_height: f32, text: []const u8, scale: f32) [2]f32 {
+pub fn textSize(glyphs: *const GlyphMap, line_height: f64, text: []const u8, scale: f64) [2]f64 {
     var layout = textLayout(glyphs, line_height, text, .{ .pos = .{ 0, 0 }, .scale = scale });
     while (layout.next()) |_| {}
     return layout.size;
@@ -178,7 +178,7 @@ const VoidTextLayout = struct {
     pub const Writer = TextLayoutWriter(void, VoidTextLayout.onGlyphFn);
 };
 
-pub fn fmtTextSize(glyphs: *const GlyphMap, line_height: f32, comptime format: []const u8, args: anytype, scale: f32) [2]f32 {
+pub fn fmtTextSize(glyphs: *const GlyphMap, line_height: f64, comptime format: []const u8, args: anytype, scale: f64) [2]f64 {
     var void_layout_writer: VoidTextLayout.Writer = .{
         .context = {},
         .text_layout = .{
@@ -193,7 +193,7 @@ pub fn fmtTextSize(glyphs: *const GlyphMap, line_height: f32, comptime format: [
     return void_layout_writer.text_layout.size;
 }
 
-pub fn textLayout(glyphs: *const GlyphMap, line_height: f32, text: []const u8, options: TextLayout.Options) TextLayout {
+pub fn textLayout(glyphs: *const GlyphMap, line_height: f64, text: []const u8, options: TextLayout.Options) TextLayout {
     return .{
         .glyphs = glyphs,
         .text = text,
@@ -206,22 +206,22 @@ pub fn textLayout(glyphs: *const GlyphMap, line_height: f32, text: []const u8, o
 pub const TextLayout = struct {
     glyphs: *const GlyphMap,
     text: []const u8,
-    line_height: f32,
-    current_offset: [2]f32,
+    line_height: f64,
+    current_offset: [2]f64,
     index: usize = 0,
     options: Options = .{},
-    direction: f32 = 1,
-    size: [2]f32 = .{ 0, 0 },
+    direction: f64 = 1,
+    size: [2]f64 = .{ 0, 0 },
 
     pub const Options = struct {
-        pos: [2]f32 = .{ 0, 0 },
-        scale: f32 = 1,
+        pos: [2]f64 = .{ 0, 0 },
+        scale: f64 = 1,
     };
 
     pub const Item = struct {
         glyph: Glyph,
-        pos: [2]f32,
-        size: [2]f32,
+        pos: [2]f64,
+        size: [2]f64,
     };
 
     pub fn next(this: *@This()) ?Item {
@@ -266,7 +266,7 @@ pub const TextLayout = struct {
         };
 
         const xadvance = (glyph.xadvance * this.options.scale);
-        const offset = [2]f32{
+        const offset = [2]f64{
             glyph.offset[0] * this.options.scale,
             glyph.offset[1] * this.options.scale,
         };

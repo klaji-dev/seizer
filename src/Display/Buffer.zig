@@ -75,7 +75,7 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.Imag
     dest.composite(src);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.Image, _: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.Image, options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const start_pos = [2]u32{
@@ -100,13 +100,19 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
                 ((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1],
             };
             const dst_pixel = this.image().getPixel(.{ @intCast(x), @intCast(y) });
-            const src_pixel = src_image.getPixel(.{
+            const src_pixel = seizer.color.fx4FromUx4(f64, u8, src_image.getPixel(.{
                 @intFromFloat(texture_coord[0]),
                 @intFromFloat(texture_coord[1]),
+            }));
+            const src_pixel_tint = seizer.color.ux4FromFx4(u8, f64, .{
+                src_pixel[0] * options.color[0],
+                src_pixel[1] * options.color[1],
+                src_pixel[2] * options.color[2],
+                src_pixel[3] * options.color[3],
             });
             // TODO: composite
             this.image().setPixel(.{ @intCast(x), @intCast(y) }, seizer.color.compositeAOverB(
-                src_pixel,
+                src_pixel_tint,
                 dst_pixel,
             ));
         }

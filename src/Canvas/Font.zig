@@ -1,27 +1,21 @@
 allocator: std.mem.Allocator,
-graphics: seizer.Graphics,
-pages: std.AutoHashMapUnmanaged(u32, Page),
+pages: std.AutoHashMapUnmanaged(u32, seizer.Image),
 glyphs: GlyphMap,
-line_height: f32,
-base: f32,
-scale: [2]f32,
+line_height: f64,
+base: f64,
+scale: [2]f64,
 
 const AngelCodeFont = @import("AngelCodeFont");
 const Font = @This();
 
 const GlyphMap = std.AutoHashMapUnmanaged(AngelCodeFont.Glyph.Id, AngelCodeFont.Glyph);
 
-pub const Page = struct {
-    texture: *seizer.Graphics.Texture,
-    size: [2]u32,
-};
-
 pub const ImageFile = struct {
     name: []const u8,
     contents: []const u8,
 };
 
-pub fn fromFileContents(allocator: std.mem.Allocator, graphics: seizer.Graphics, font_contents: []const u8, image_list: []const ImageFile) !@This() {
+pub fn fromFileContents(allocator: std.mem.Allocator, font_contents: []const u8, image_list: []const ImageFile) !@This() {
     var font_data = try AngelCodeFont.parse(allocator, font_contents);
     defer font_data.deinit();
 
@@ -33,7 +27,7 @@ pub fn fromFileContents(allocator: std.mem.Allocator, graphics: seizer.Graphics,
 
     var missing_image = false;
 
-    var pages = std.AutoHashMapUnmanaged(u32, Page){};
+    var pages = std.AutoHashMapUnmanaged(u32, seizer.Image){};
     defer pages.deinit(allocator);
     var page_name_iterator = font_data.pages.iterator();
     while (page_name_iterator.next()) |entry| {
@@ -43,22 +37,16 @@ pub fn fromFileContents(allocator: std.mem.Allocator, graphics: seizer.Graphics,
             continue;
         };
         try pages.ensureUnusedCapacity(allocator, 1);
-        var image = try zigimg.Image.fromMemory(allocator, image_content);
-        defer image.deinit();
+        var image = try seizer.Image.fromMemory(allocator, image_content);
+        errdefer image.free(allocator);
 
-        const texture = try graphics.createTexture(image.toUnmanaged(), .{});
-
-        pages.putAssumeCapacity(entry.key_ptr.*, .{
-            .texture = texture,
-            .size = .{ @intCast(image.width), @intCast(image.height) },
-        });
+        pages.putAssumeCapacity(entry.key_ptr.*, image);
     }
 
     if (missing_image) return error.MissingImage;
 
     return @This(){
         .allocator = allocator,
-        .graphics = graphics,
         .pages = pages.move(),
         .glyphs = font_data.glyphs.move(),
         .line_height = font_data.lineHeight,
@@ -70,19 +58,19 @@ pub fn fromFileContents(allocator: std.mem.Allocator, graphics: seizer.Graphics,
 pub fn deinit(this: *@This()) void {
     var page_iter = this.pages.valueIterator();
     while (page_iter.next()) |page| {
-        this.graphics.destroyTexture(page.texture);
+        page.free(this.allocator);
     }
     this.pages.deinit(this.allocator);
     this.glyphs.deinit(this.allocator);
 }
 
-pub fn textSize(this: *const @This(), text: []const u8, scale: f32) [2]f32 {
+pub fn textSize(this: *const @This(), text: []const u8, scale: f64) [2]f64 {
     var layout = this.textLayout(text, .{ .pos = .{ 0, 0 }, .scale = scale });
     while (layout.next()) |_| {}
     return layout.size;
 }
 
-pub fn fmtTextSize(this: *const @This(), comptime format: []const u8, args: anytype, scale: f32) [2]f32 {
+pub fn fmtTextSize(this: *const @This(), comptime format: []const u8, args: anytype, scale: f64) [2]f64 {
     return AngelCodeFont.fmtTextSize(
         &this.glyphs,
         this.line_height,
@@ -108,4 +96,3 @@ const log = std.log.scoped(.seizer);
 
 const seizer = @import("../seizer.zig");
 const std = @import("std");
-const zigimg = @import("zigimg");
