@@ -11,10 +11,8 @@ pub const Interface = struct {
     blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.Image) void,
     texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.Image, options: RectOptions) void,
     // fill_rect: *const fn (?*anyopaque, pos: [2]f64, size: [2]f64, options: RectOptions) void,
-    // line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
+    line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };
-
-pub const Texture = opaque {};
 
 pub const RectOptions = struct {
     depth: f64 = 0.5,
@@ -26,6 +24,10 @@ pub const LineOptions = struct {
     width: f64 = 1,
     color: [4]u8 = .{ 0xFF, 0xFF, 0xFF, 0xFF },
 };
+
+pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOptions) void {
+    return this.interface.line(this.ptr, start_pos, end_pos, options);
+}
 
 // Stuff that is implemented on top of the base functions
 

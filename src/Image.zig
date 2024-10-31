@@ -113,26 +113,29 @@ pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: [4]u8) void {
         return;
     }
 
-    const x_min = @min(a[0], b[0]);
-    const x_max = @max(a[0], b[0]);
-    const y_min = @min(a[1], b[1]);
-    const y_max = @max(a[1], b[1]);
-
     const delta = [2]i32{
-        x_max - x_min,
-        y_max - y_min,
+        @intCast(@abs(b[0] - a[0])),
+        -@as(i32, @intCast(@abs(b[1] - a[1]))),
+    };
+    const sign = [2]i32{
+        std.math.sign(b[0] - a[0]),
+        std.math.sign(b[1] - a[1]),
     };
 
-    var D = 2 * delta[1] - delta[0];
-
-    var pos = [2]i32{ x_min, y_min };
-    while (pos[0] < x_max) : (pos[0] += 1) {
+    var err = delta[0] + delta[1];
+    var pos = a;
+    while (true) {
         this.setPixel(pos, color);
-        if (D > 0) {
-            pos[1] += 1;
-            D -= 2 * delta[0];
+        if (pos[0] == b[0] and pos[1] == b[1]) break;
+        const err2 = 2 * err;
+        if (err2 >= delta[1]) {
+            err += delta[1];
+            pos[0] += sign[0];
         }
-        D += 2 * delta[1];
+        if (err2 <= delta[0]) {
+            err += delta[0];
+            pos[1] += sign[1];
+        }
     }
 }
 

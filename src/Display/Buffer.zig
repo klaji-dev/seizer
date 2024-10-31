@@ -34,6 +34,7 @@ const CANVAS_INTERFACE: *const seizer.Canvas.Interface = &.{
     .size = canvas_size,
     .blit = canvas_blit,
     .texture_rect = canvas_textureRect,
+    .line = canvas_line,
 };
 
 pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
@@ -117,6 +118,20 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
             ));
         }
     }
+}
+
+pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    const start_i = [2]i32{
+        @intFromFloat(@floor(start[0])),
+        @intFromFloat(@floor(start[1])),
+    };
+    const end_i = [2]i32{
+        @intFromFloat(@floor(end[0])),
+        @intFromFloat(@floor(end[1])),
+    };
+
+    this.image().drawLine(start_i, end_i, options.color);
 }
 
 const seizer = @import("../seizer.zig");
