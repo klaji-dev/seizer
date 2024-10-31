@@ -164,6 +164,120 @@ pub fn getPixel(this: @This(), pos: [2]i32) Pixel {
     return this.pixels[@intCast(posu[1] * this.stride + posu[0])];
 }
 
+pub fn resize(dst: @This(), src: @This()) void {
+    const dst_size = [2]f64{
+        @floatFromInt(dst.size[0]),
+        @floatFromInt(dst.size[1]),
+    };
+
+    const src_size = [2]f64{
+        @floatFromInt(src.size[0]),
+        @floatFromInt(src.size[1]),
+    };
+
+    // const B = 1.0 / 3.0;
+    // const C = 1.0 / 3.0;
+    const u8_max: @Vector(4, f64) = @splat(std.math.maxInt(u8) + 1.0);
+
+    for (0..dst.size[1]) |dst_y| {
+        for (0..dst.size[0]) |dst_x| {
+            const uv = [2]f64{
+                @as(f64, @floatFromInt(dst_x)) / dst_size[0],
+                @as(f64, @floatFromInt(dst_y)) / dst_size[1],
+            };
+            const src_pos = [2]f64{
+                uv[0] * src_size[0] - 0.5,
+                uv[1] * src_size[1] - 0.5,
+            };
+            const src_columnf = @floor(src_pos[0]);
+            const col_indices = [4]f64{
+                @floor(src_columnf - 1),
+                @floor(src_columnf - 0),
+                @floor(src_columnf + 1),
+                @floor(src_columnf + 2),
+            };
+            const src_rowf = @floor(src_pos[1]);
+            const row_indices = [4]f64{
+                @floor(src_rowf - 1),
+                @floor(src_rowf - 0),
+                @floor(src_rowf + 1),
+                @floor(src_rowf + 2),
+            };
+
+            const kernel_x: @Vector(4, f64) = .{
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[0] - src_pos[0]),
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[1] - src_pos[0]),
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[2] - src_pos[0]),
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[3] - src_pos[0]),
+            };
+            const kernel_y: @Vector(4, f64) = .{
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[0] - src_pos[1]),
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[1] - src_pos[1]),
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[2] - src_pos[1]),
+                cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[3] - src_pos[1]),
+            };
+
+            var row_interpolations: [4][4]f64 = undefined;
+            for (0..4, row_indices) |interpolation_idx, row_idxf| {
+                const row_idx: i32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1]));
+                // transpose so we can multiply by each color channel separately
+                const src_row_pixels = seizer.geometry.mat.transpose(4, 4, u8, [4][4]u8{
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0])), row_idx }),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0])), row_idx }),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0])), row_idx }),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0])), row_idx }),
+                });
+
+                const alpha_unnormalized: @Vector(4, f64) = @floatFromInt(@as(@Vector(4, u8), src_row_pixels[3]));
+                const alpha = alpha_unnormalized / u8_max;
+                const alpha_sum = @reduce(.Add, kernel_x * alpha);
+                row_interpolations[3][interpolation_idx] = alpha_sum;
+                if (alpha_sum == 0) {
+                    for (0..3) |channel| {
+                        row_interpolations[channel][interpolation_idx] = 0;
+                    }
+                    continue;
+                }
+                for (0..3, src_row_pixels[0..3]) |interpolation_channel, channel| {
+                    const channel_v: @Vector(4, f64) = @floatFromInt(@as(@Vector(4, u8), channel));
+                    row_interpolations[interpolation_channel][interpolation_idx] = @reduce(.Add, kernel_x * (channel_v / u8_max) * alpha) / alpha_sum;
+                }
+            }
+
+            var out_pixel: Pixel = undefined;
+
+            const alpha: @Vector(4, f64) = row_interpolations[3];
+            const alpha_sum = @reduce(.Add, kernel_y * alpha);
+            if (alpha_sum == 0) {
+                dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, .{ 0, 0, 0, 0 });
+                continue;
+            }
+            for (out_pixel[0..3], row_interpolations[0..3]) |*out_channel, channel| {
+                const channel_v: @Vector(4, f64) = channel;
+                out_channel.* = @intFromFloat(std.math.clamp(@reduce(.Add, kernel_y * channel_v * alpha) / alpha_sum * std.math.maxInt(u8), 0, std.math.maxInt(u8)));
+            }
+            out_pixel[3] = @intFromFloat(std.math.clamp(alpha_sum * std.math.maxInt(u8), 0, std.math.maxInt(u8)));
+
+            dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, out_pixel);
+        }
+    }
+}
+
+// Returns the amount a sample should influence the output result
+pub fn cubicFilter(B: f64, C: f64, x: f64) f64 {
+    const x1 = @abs(x);
+    const x2 = @abs(x) * @abs(x);
+    const x3 = @abs(x) * @abs(x) * @abs(x);
+
+    if (x1 < 1.0) {
+        return ((12.0 - 9.0 * B - 6.0 * C) * x3 + (-18.0 + 12.0 * B + 6.0 * C) * x2 + (6.0 - 2.0 * B)) / 6.0;
+    } else if (x1 < 2.0) {
+        return ((-B - 6.0 * C) * x3 + (6.0 * B + 30.0 * C) * x2 + (-12.0 * B - 48.0 * C) * x1 + (8.0 * B + 24.0 * C)) / 6.0;
+    } else {
+        return 0;
+    }
+}
+
 const std = @import("std");
 const seizer = @import("./seizer.zig");
 const zigimg = @import("zigimg");
