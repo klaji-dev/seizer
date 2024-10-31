@@ -4,6 +4,17 @@ pixels: [*]Pixel,
 
 pub const Pixel = [4]u8;
 
+pub fn alloc(allocator: std.mem.Allocator, size: [2]u32) !@This() {
+    const pixels = try allocator.alloc([4]u8, size[0] * size[1]);
+    errdefer allocator.free(pixels);
+
+    return .{
+        .size = size,
+        .stride = size[0],
+        .pixels = pixels.ptr,
+    };
+}
+
 pub fn fromMemory(allocator: std.mem.Allocator, file_contents: []const u8) !@This() {
     var img = try zigimg.Image.fromMemory(allocator, file_contents);
     defer img.deinit();
