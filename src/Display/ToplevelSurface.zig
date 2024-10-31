@@ -72,6 +72,16 @@ pub fn getBuffer(this: *@This()) !Display.Buffer {
     return try this.swapchain.getBuffer();
 }
 
+pub fn requestAnimationFrame(this: *@This()) !void {
+    if (this.frame_callback != null) return;
+    const wl_surface = shimizu.Proxy(wayland.wl_surface){ .connection = &this.display.connection, .id = this.wl_surface };
+
+    const frame_callback = try wl_surface.sendRequest(.frame, .{});
+    frame_callback.setEventListener(&this.frame_callback_listener, onFrameCallback, this);
+
+    this.frame_callback = frame_callback.id;
+}
+
 pub fn present(this: *@This(), buffer: Display.Buffer) !void {
     try this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .attach, .{
         .x = 0,
@@ -183,12 +193,6 @@ pub fn onXdgToplevelEvent(listener: *shimizu.Listener, xdg_toplevel: shimizu.Pro
 //         },
 //     }
 // }
-
-fn setupFrameCallback(this: *@This()) !void {
-    if (this.frame_callback != null) return;
-    this.frame_callback = try this.wl_surface.sendRequest(.frame, .{});
-    this.frame_callback.?.setEventListener(&this.frame_callback_listener, onFrameCallback, this);
-}
 
 fn onFrameCallback(listener: *shimizu.Listener, callback: shimizu.Proxy(wayland.wl_callback), event: wayland.wl_callback.Event) shimizu.Listener.Error!void {
     const this: *@This() = @fieldParentPtr("frame_callback_listener", listener);
