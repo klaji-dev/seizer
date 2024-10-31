@@ -7,6 +7,7 @@ const Example = enum {
     texture_rect,
     bitmap_font,
     sprite_batch,
+    bicubic_filter,
     tinyvg,
     gamepad,
     clicker,
