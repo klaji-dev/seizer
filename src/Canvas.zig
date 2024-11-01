@@ -14,9 +14,13 @@ pub const Interface = struct {
     line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };
 
+pub fn blit(this: @This(), pos: [2]f64, image: seizer.Image) void {
+    return this.interface.blit(this.ptr, pos, image);
+}
+
 pub const RectOptions = struct {
     depth: f64 = 0.5,
-    color: [4]f64 = .{ 1, 1, 1, 1 },
+    color: seizer.color.argb = seizer.color.argb.WHITE,
 };
 
 pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.Image, options: RectOptions) void {
@@ -30,7 +34,7 @@ pub fn fillRect(this: @This(), pos: [2]f64, size: [2]f64, options: RectOptions) 
 pub const LineOptions = struct {
     depth: f64 = 0.5,
     width: f64 = 1,
-    color: [4]u8 = .{ 0xFF, 0xFF, 0xFF, 0xFF },
+    color: seizer.color.argb = seizer.color.argb.WHITE,
 };
 
 pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOptions) void {
@@ -45,7 +49,7 @@ pub const NinePatch = struct {
 
     pub const Options = struct {
         depth: f64 = 0.5,
-        color: [4]f64 = .{ 1, 1, 1, 1 },
+        color: seizer.color.argb = seizer.color.argb.WHITE,
         scale: f64 = 1,
     };
 
@@ -100,7 +104,7 @@ pub fn ninePatch(this: @This(), pos: [2]f64, size: [2]f64, image: seizer.Image, 
 
 pub const TextOptions = struct {
     depth: f64 = 0.5,
-    color: [4]f64 = .{ 1, 1, 1, 1 },
+    color: seizer.color.argb = seizer.color.argb.WHITE,
     scale: f64 = 1,
     @"align": Align = .left,
     baseline: Baseline = .top,
@@ -168,7 +172,7 @@ pub const TextLayoutWriter = Font.TextLayoutWriter(WriteGlyphContext, writeGlyph
 pub const TextLayoutOptions = struct {
     pos: [2]f64 = .{ 0, 0 },
     scale: f64 = 1,
-    color: [4]f64,
+    color: seizer.color.argb = seizer.color.argb.WHITE,
 };
 
 pub fn textLayoutWriter(this: @This(), font: *const Font, options: TextLayoutOptions) TextLayoutWriter {

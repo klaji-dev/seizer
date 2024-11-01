@@ -37,11 +37,11 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     _ = listener;
 
     var framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ 0.5, 0.5, 0.7, 1.0 });
+    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     var pos = [2]f64{ 50, 50 };
     pos[1] += framebuffer.canvas().writeText(&font, pos, "Hello, world!", .{})[1];
-    pos[1] += framebuffer.canvas().writeText(&font, pos, "Hello, world!", .{ .color = .{ 0, 0, 0, 1 } })[1];
+    pos[1] += framebuffer.canvas().writeText(&font, pos, "Hello, world!", .{ .color = .{ .r = 0, .g = 0, .b = 0, .a = 1 } })[1];
     pos[1] += framebuffer.canvas().printText(&font, pos, "pos = <{}, {}>", .{ pos[0], pos[1] }, .{})[1];
 
     try surface.present(framebuffer);

@@ -8,14 +8,12 @@ free: std.BoundedArray(u32, 6) = .{},
 
 wl_buffer_event_listener: shimizu.Listener = undefined,
 
-pub const Pixel = Buffer.Pixel;
-
 pub fn allocate(this: *@This(), wl_shm: shimizu.Proxy(shimizu.core.wl_shm), size: [2]u32, count: u32) !void {
     std.debug.assert(count <= 6);
     const fd = try std.posix.memfd_create("swapchain", 0);
     defer std.posix.close(fd);
 
-    const frame_size = size[0] * size[1] * @sizeOf(Pixel);
+    const frame_size = size[0] * size[1] * @sizeOf(seizer.color.argb8888);
     const total_size = frame_size * count;
     try std.posix.ftruncate(fd, total_size);
 
@@ -34,13 +32,13 @@ pub fn allocate(this: *@This(), wl_shm: shimizu.Proxy(shimizu.core.wl_shm), size
             .offset = @intCast(offset),
             .width = @intCast(size[0]),
             .height = @intCast(size[1]),
-            .stride = @intCast(size[0] * @sizeOf(Pixel)),
+            .stride = @intCast(size[0] * @sizeOf(seizer.color.argb8888)),
             .format = .argb8888,
         });
         buffers.appendAssumeCapacity(.{
             .wl_buffer = wl_buffer,
             .size = size,
-            .pixels = std.mem.bytesAsSlice(Pixel, memory[offset..][0..frame_size]).ptr,
+            .pixels = @ptrCast(@alignCast(memory[offset..][0..frame_size].ptr)),
         });
         free.appendAssumeCapacity(@intCast(index));
         offset += frame_size;
@@ -85,5 +83,6 @@ fn onWlBufferEvent(listener: *shimizu.Listener, wl_buffer: shimizu.Proxy(shimizu
 const Image = @import("../Image.zig");
 const Buffer = @import("./Buffer.zig");
 
+const seizer = @import("../seizer.zig");
 const shimizu = @import("shimizu");
 const std = @import("std");

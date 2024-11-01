@@ -42,7 +42,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     _ = listener;
 
     var framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ 0.5, 0.5, 0.7, 1.0 });
+    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     const sizef = [2]f64{ @floatFromInt(framebuffer.size[0]), @floatFromInt(framebuffer.size[1]) };
     framebuffer.canvas().textureRect(.{ 0, 0.0 * sizef[1] / 3.0 }, .{ sizef[0], sizef[1] / 3.0 }, bicubic_downscale, .{});

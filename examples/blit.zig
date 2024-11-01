@@ -31,9 +31,9 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     _ = listener;
 
     var framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ 0.5, 0.5, 0.7, 1.0 });
+    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
-    framebuffer.canvas().interface.blit(framebuffer.canvas().ptr, .{ 50, 50 }, image);
+    framebuffer.canvas().blit(.{ 50, 50 }, image);
 
     try surface.present(framebuffer);
 }

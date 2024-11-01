@@ -130,7 +130,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     // begin rendering
 
     var framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ 0.5, 0.5, 0.7, 1.0 });
+    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     for (sprites.items(.pos), sprites.items(.size)) |pos, size| {
         framebuffer.canvas().textureRect(pos, size, player_image, .{});

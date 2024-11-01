@@ -1,11 +1,11 @@
+//! An RGBA8888 image with premultiplied alpha.
+
 size: [2]u32,
 stride: u32,
-pixels: [*]Pixel,
-
-pub const Pixel = [4]u8;
+pixels: [*]seizer.color.argb8888,
 
 pub fn alloc(allocator: std.mem.Allocator, size: [2]u32) !@This() {
-    const pixels = try allocator.alloc([4]u8, size[0] * size[1]);
+    const pixels = try allocator.alloc(seizer.color.argb8888, size[0] * size[1]);
     errdefer allocator.free(pixels);
 
     return .{
@@ -20,7 +20,18 @@ pub fn fromMemory(allocator: std.mem.Allocator, file_contents: []const u8) !@Thi
     defer img.deinit();
 
     try img.convert(.rgba32);
-    const pixels = try allocator.dupe([4]u8, @ptrCast(img.pixels.rgba32));
+
+    const pixels = try allocator.alloc(seizer.color.argb8888, img.pixels.rgba32.len);
+
+    // pre-multiply the image
+    for (pixels, img.pixels.rgba32) |*out, in| {
+        out.* = .{
+            .b = @intCast((@as(u16, in.b) * @as(u16, in.a)) >> 8),
+            .g = @intCast((@as(u16, in.g) * @as(u16, in.a)) >> 8),
+            .r = @intCast((@as(u16, in.r) * @as(u16, in.a)) >> 8),
+            .a = in.a,
+        };
+    }
 
     return .{
         .size = .{ @intCast(img.width), @intCast(img.height) },
@@ -33,7 +44,7 @@ pub fn free(this: @This(), allocator: std.mem.Allocator) void {
     allocator.free(this.pixels[0 .. this.size[0] * this.size[1]]);
 }
 
-pub fn fromRawPixels(pixels: []Pixel, size: [2]u32) @This() {
+pub fn fromRawPixels(pixels: []seizer.color.argb8888, size: [2]u32) @This() {
     std.debug.assert(pixels.len == size[0] * size[1]);
     return .{
         .size = size,
@@ -72,16 +83,16 @@ pub fn composite(dst: @This(), src: @This()) void {
     for (0..dst.size[1]) |y| {
         const dst_row = dst.pixels[y * dst.stride ..][0..dst.size[0]];
         const src_row = src.pixels[y * src.stride ..][0..src.size[0]];
-        for (dst_row, src_row) |*dst_pixel, src_pixel| {
-            dst_pixel.* = seizer.color.compositeAOverB(
-                src_pixel,
-                dst_pixel.*,
+        for (dst_row, src_row) |*dst_argb, src_argb| {
+            dst_argb.* = seizer.color.compositeSrcOver(
+                dst_argb.*,
+                src_argb,
             );
         }
     }
 }
 
-pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: [4]u8) void {
+pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: seizer.color.argb8888) void {
     const size_i = [2]i32{ @intCast(this.size[0]), @intCast(this.size[1]) };
     const min = [2]u32{
         @intCast(std.math.clamp(@min(a[0], b[0]), 0, size_i[0])),
@@ -97,12 +108,12 @@ pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: [4]u8) void {
         const start_of_row: u32 = @intCast(row * this.stride);
         const row_buffer = this.pixels[start_of_row..][min[0]..max[0]];
         for (row_buffer) |*pixel| {
-            pixel.* = seizer.color.compositeAOverB(color, pixel.*);
+            pixel.* = seizer.color.compositeSrcOver(pixel.*, color);
         }
     }
 }
 
-pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: [4]u8) void {
+pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: seizer.color.argb8888) void {
     if (a[0] == b[0]) {
         var y = @min(a[1], b[1]);
         const end_y = @max(a[1], b[1]);
@@ -152,16 +163,16 @@ pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: [4]u8) void {
     }
 }
 
-pub fn setPixel(this: @This(), pos: [2]i32, color: Pixel) void {
     if (pos[0] < 0 or pos[0] >= this.size[0]) return;
     if (pos[1] < 0 or pos[1] >= this.size[1]) return;
+pub fn setPixel(this: @This(), pos: [2]i32, color: seizer.color.argb8888) void {
     const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
     this.pixels[@intCast(posu[1] * this.stride + posu[0])] = color;
 }
 
-pub fn getPixel(this: @This(), pos: [2]i32) Pixel {
     std.debug.assert(pos[0] >= 0 or pos[0] < this.size[0]);
     std.debug.assert(pos[1] >= 0 or pos[1] < this.size[1]);
+pub fn getPixel(this: @This(), pos: [2]i32) seizer.color.argb8888 {
     const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
     return this.pixels[@intCast(posu[1] * this.stride + posu[0])];
 }
@@ -224,43 +235,26 @@ pub fn resize(dst: @This(), src: @This()) void {
                 const row_idx: i32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1]));
                 // transpose so we can multiply by each color channel separately
                 const src_row_pixels = seizer.geometry.mat.transpose(4, 4, u8, [4][4]u8{
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0])), row_idx }),
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0])), row_idx }),
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0])), row_idx }),
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0])), row_idx }),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0])), row_idx }).toBytes(),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0])), row_idx }).toBytes(),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0])), row_idx }).toBytes(),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0])), row_idx }).toBytes(),
                 });
 
-                const alpha_unnormalized: @Vector(4, f64) = @floatFromInt(@as(@Vector(4, u8), src_row_pixels[3]));
-                const alpha = alpha_unnormalized / u8_max;
-                const alpha_sum = @reduce(.Add, kernel_x * alpha);
-                row_interpolations[3][interpolation_idx] = alpha_sum;
-                if (alpha_sum == 0) {
-                    for (0..3) |channel| {
-                        row_interpolations[channel][interpolation_idx] = 0;
-                    }
-                    continue;
-                }
-                for (0..3, src_row_pixels[0..3]) |interpolation_channel, channel| {
+                for (0..4, src_row_pixels[0..4]) |interpolation_channel, channel| {
                     const channel_v: @Vector(4, f64) = @floatFromInt(@as(@Vector(4, u8), channel));
-                    row_interpolations[interpolation_channel][interpolation_idx] = @reduce(.Add, kernel_x * (channel_v / u8_max) * alpha) / alpha_sum;
+                    row_interpolations[interpolation_channel][interpolation_idx] = @reduce(.Add, kernel_x * (channel_v / u8_max));
                 }
             }
 
-            var out_pixel: Pixel = undefined;
+            var out_pixel: [4]u8 = undefined;
 
-            const alpha: @Vector(4, f64) = row_interpolations[3];
-            const alpha_sum = @reduce(.Add, kernel_y * alpha);
-            if (alpha_sum == 0) {
-                dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, .{ 0, 0, 0, 0 });
-                continue;
-            }
-            for (out_pixel[0..3], row_interpolations[0..3]) |*out_channel, channel| {
+            for (out_pixel[0..], row_interpolations[0..]) |*out_channel, channel| {
                 const channel_v: @Vector(4, f64) = channel;
-                out_channel.* = @intFromFloat(std.math.clamp(@reduce(.Add, kernel_y * channel_v * alpha) / alpha_sum * std.math.maxInt(u8), 0, std.math.maxInt(u8)));
+                out_channel.* = @intFromFloat(std.math.clamp(@reduce(.Add, kernel_y * channel_v) * std.math.maxInt(u8), 0, std.math.maxInt(u8)));
             }
-            out_pixel[3] = @intFromFloat(std.math.clamp(alpha_sum * std.math.maxInt(u8), 0, std.math.maxInt(u8)));
 
-            dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, out_pixel);
+            dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argb8888.fromBytes(out_pixel));
         }
     }
 }

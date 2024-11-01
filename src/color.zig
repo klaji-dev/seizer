@@ -1,38 +1,67 @@
-pub fn compositeAOverB(a: [4]u8, b: [4]u8) [4]u8 {
-    const a_alpha = @as(f64, @floatFromInt(a[3])) / std.math.maxInt(u8);
-    const b_alpha = @as(f64, @floatFromInt(b[3])) / std.math.maxInt(u8);
+pub const argb = extern struct {
+    b: f64,
+    g: f64,
+    r: f64,
+    a: f64,
 
-    const a_mult: @Vector(3, f64) = @splat(a_alpha);
-    const b_mult: @Vector(3, f64) = @splat(b_alpha * (1.0 - a_alpha));
+    pub const WHITE: argb = .{ .b = 1, .g = 1, .r = 1, .a = 1 };
+    pub const BLACK: argb = .{ .b = 0, .g = 0, .r = 0, .a = 1 };
 
-    var a_vec: @Vector(3, f64) = @floatFromInt(@as(@Vector(3, u8), a[0..3].*));
-    a_vec /= @splat(std.math.maxInt(u8));
+    pub fn fromArray(array: [4]f64) @This() {
+        return .{ .b = array[0], .g = array[1], .r = array[2], .a = array[3] };
+    }
 
-    var b_vec: @Vector(3, f64) = @floatFromInt(@as(@Vector(3, u8), b[0..3].*));
-    b_vec /= @splat(std.math.maxInt(u8));
+    pub fn toArray(this: @This()) [4]f64 {
+        return .{ this.b, this.g, this.r, this.a };
+    }
 
-    const out: [3]u8 = @as(@Vector(3, u8), @intFromFloat(((a_vec * a_mult + b_vec * b_mult) / (a_mult + b_mult)) * @as(@Vector(3, f64), @splat(std.math.maxInt(u8)))));
-    const out_alpha: [3]f64 = a_mult + b_mult;
+    // TODO: make `argb` have linear encoding, use non-linear encoding for argb8888?
+    pub fn toArgb8888(this: @This()) argb8888 {
+        return .{
+            .b = @intFromFloat(this.b * std.math.maxInt(u8)),
+            .g = @intFromFloat(this.g * std.math.maxInt(u8)),
+            .r = @intFromFloat(this.r * std.math.maxInt(u8)),
+            .a = @intFromFloat(this.a * std.math.maxInt(u8)),
+        };
+    }
+};
 
-    return .{ out[0], out[1], out[2], @intFromFloat(out_alpha[0] * std.math.maxInt(u8)) };
-}
+/// Assumes premultiplied alpha
+pub const argb8888 = packed struct(u32) {
+    b: u8,
+    g: u8,
+    r: u8,
+    a: u8,
 
-pub fn fx4FromUx4(F: type, U: type, a: [4]U) [4]F {
-    return .{
-        @as(F, @floatFromInt(a[0])) / std.math.maxInt(U),
-        @as(F, @floatFromInt(a[1])) / std.math.maxInt(U),
-        @as(F, @floatFromInt(a[2])) / std.math.maxInt(U),
-        @as(F, @floatFromInt(a[3])) / std.math.maxInt(U),
+    pub const BLACK = .{ .b = 0, .g = 0, .r = 0, .a = 1 };
+
+    pub fn fromBytes(bytes: [4]u8) @This() {
+        return .{ .b = bytes[0], .g = bytes[1], .r = bytes[2], .a = bytes[3] };
+    }
+
+    pub fn toBytes(this: @This()) [4]u8 {
+        return .{ this.b, this.g, this.r, this.a };
+    }
+};
+
+pub fn tint(src: argb8888, mask: argb8888) argb8888 {
+    return argb8888{
+        .b = @intCast((@as(u16, src.b) * @as(u16, mask.b)) >> 8),
+        .g = @intCast((@as(u16, src.g) * @as(u16, mask.g)) >> 8),
+        .r = @intCast((@as(u16, src.r) * @as(u16, mask.r)) >> 8),
+        .a = @intCast((@as(u16, src.a) * @as(u16, mask.a)) >> 8),
     };
 }
 
-pub fn ux4FromFx4(U: type, F: type, a: [4]F) [4]U {
-    return .{
-        @intFromFloat(std.math.clamp(a[0] * std.math.maxInt(U), 0, std.math.maxInt(U))),
-        @intFromFloat(std.math.clamp(a[1] * std.math.maxInt(U), 0, std.math.maxInt(U))),
-        @intFromFloat(std.math.clamp(a[2] * std.math.maxInt(U), 0, std.math.maxInt(U))),
-        @intFromFloat(std.math.clamp(a[3] * std.math.maxInt(U), 0, std.math.maxInt(U))),
+pub fn compositeSrcOver(dst: argb8888, src: argb8888) argb8888 {
+    const one_minus_src_a: u16 = 0xFF - src.a;
+    return argb8888{
+        .b = @intCast(src.b + ((@as(u16, dst.b) * one_minus_src_a) >> 8)),
+        .g = @intCast(src.g + ((@as(u16, dst.g) * one_minus_src_a) >> 8)),
+        .r = @intCast(src.r + ((@as(u16, dst.r) * one_minus_src_a) >> 8)),
+        .a = @intCast(src.a + ((@as(u16, dst.a) * one_minus_src_a) >> 8)),
     };
 }
 
+const probes = @import("probes");
 const std = @import("std");

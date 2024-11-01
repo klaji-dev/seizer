@@ -1,18 +1,9 @@
 wl_buffer: shimizu.Proxy(shimizu.core.wl_buffer),
 size: [2]u32,
-pixels: [*]Pixel,
+pixels: [*]seizer.color.argb8888,
 
-pub const Pixel = [4]u8;
-
-pub fn clear(this: @This(), color: [4]f64) void {
-    // TODO: stop assuming xrgb8888
-    const color_u8 = [4]u8{
-        @intFromFloat(color[2] * std.math.maxInt(u8)),
-        @intFromFloat(color[1] * std.math.maxInt(u8)),
-        @intFromFloat(color[0] * std.math.maxInt(u8)),
-        @intFromFloat(color[3] * std.math.maxInt(u8)),
-    };
-    @memset(this.pixels[0 .. this.size[0] * this.size[1]], color_u8);
+pub fn clear(this: @This(), color: seizer.color.argb) void {
+    @memset(this.pixels[0 .. this.size[0] * this.size[1]], color.toArgb8888());
 }
 
 pub fn image(this: @This()) seizer.Image {
@@ -82,14 +73,7 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
     const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
     const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
 
-    const color_u8 = [4]u8{
-        @intFromFloat(options.color[0] * std.math.maxInt(u8)),
-        @intFromFloat(options.color[1] * std.math.maxInt(u8)),
-        @intFromFloat(options.color[2] * std.math.maxInt(u8)),
-        @intFromFloat(options.color[3] * std.math.maxInt(u8)),
-    };
-
-    this.image().drawFillRect(a, b, color_u8);
+    this.image().drawFillRect(a, b, options.color.toArgb8888());
 }
 
 pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.Image, options: seizer.Canvas.RectOptions) void {
@@ -109,6 +93,8 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
         @floatFromInt(src_image.size[1]),
     };
 
+    const color_mask = options.color.toArgb8888();
+
     for (start_pos[1]..end_pos[1]) |y| {
         for (start_pos[0]..end_pos[0]) |x| {
             const pos = [2]f64{ @floatFromInt(x), @floatFromInt(y) };
@@ -117,20 +103,14 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
                 std.math.clamp(((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1], 0, src_size[1]),
             };
             const dst_pixel = this.image().getPixel(.{ @intCast(x), @intCast(y) });
-            const src_pixel = seizer.color.fx4FromUx4(f64, u8, src_image.getPixel(.{
+            const src_pixel = src_image.getPixel(.{
                 @intFromFloat(texture_coord[0]),
                 @intFromFloat(texture_coord[1]),
-            }));
-            const src_pixel_tint = seizer.color.ux4FromFx4(u8, f64, .{
-                src_pixel[2] * options.color[2],
-                src_pixel[1] * options.color[1],
-                src_pixel[0] * options.color[0],
-                src_pixel[3] * options.color[3],
             });
-            // TODO: composite
-            this.image().setPixel(.{ @intCast(x), @intCast(y) }, seizer.color.compositeAOverB(
-                src_pixel_tint,
+            const src_pixel_tint = seizer.color.tint(src_pixel, color_mask);
+            this.image().setPixel(.{ @intCast(x), @intCast(y) }, seizer.color.compositeSrcOver(
                 dst_pixel,
+                src_pixel_tint,
             ));
         }
     }
@@ -147,7 +127,7 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
         @intFromFloat(@floor(end[1])),
     };
 
-    this.image().drawLine(start_i, end_i, options.color);
+    this.image().drawLine(start_i, end_i, options.color.toArgb8888());
 }
 
 const seizer = @import("../seizer.zig");
