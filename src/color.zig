@@ -87,7 +87,9 @@ pub const argb8888 = packed struct(u32) {
     r: sRGB,
     a: u8,
 
-    pub const BLACK = .{ .b = 0, .g = 0, .r = 0, .a = 1 };
+    pub const TRANSPARENT: @This() = .{ .b = @enumFromInt(0x00), .g = @enumFromInt(0x00), .r = @enumFromInt(0x00), .a = 0x00 };
+    pub const BLACK: @This() = .{ .b = @enumFromInt(0x00), .g = @enumFromInt(0x00), .r = @enumFromInt(0x00), .a = 0xFF };
+    pub const WHITE: @This() = .{ .b = @enumFromInt(0xFF), .g = @enumFromInt(0xFF), .r = @enumFromInt(0xFF), .a = 0xFF };
 
     /// Convert from sRGB encoded values to linear RGB values.
     pub fn toArgb(this: @This()) argb {
@@ -136,11 +138,59 @@ pub fn compositeSrcOver(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
         src_encoded.a,
     };
     return argb8888{
-        .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src[3])) >> 8))),
-        .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src[3])) >> 8))),
-        .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src[3])) >> 8))),
-        .a = @intCast(src[3] + ((dst[3] * (0xFF - src[3])) >> 8)),
+        .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src[3])) / 0xFF))),
+        .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src[3])) / 0xFF))),
+        .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src[3])) / 0xFF))),
+        .a = @intCast(src[3] + ((dst[3] * (0xFF - src[3])) / 0xFF)),
     };
+}
+
+test compositeSrcOver {
+    try std.testing.expectEqual(argb8888.TRANSPARENT, compositeSrcOver(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
+    try std.testing.expectEqual(argb8888.WHITE, compositeSrcOver(argb8888.WHITE, argb8888.TRANSPARENT));
+    try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.TRANSPARENT, argb8888.BLACK));
+    try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.WHITE, argb8888.BLACK));
+}
+
+pub fn compositeXor(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
+    const dst_alpha_reciprocal: u32 = 0xFF - dst_encoded.a;
+    const src_alpha_reciprocal: u32 = 0xFF - src_encoded.a;
+
+    const dst: [3]u32 = .{
+        dst_encoded.b.decodeU12(),
+        dst_encoded.g.decodeU12(),
+        dst_encoded.r.decodeU12(),
+    };
+    const src: [3]u32 = .{
+        src_encoded.b.decodeU12(),
+        src_encoded.g.decodeU12(),
+        src_encoded.r.decodeU12(),
+    };
+
+    const dst_blend = [3]u12{
+        @intCast((dst[0] * src_alpha_reciprocal) / 0xFF),
+        @intCast((dst[1] * src_alpha_reciprocal) / 0xFF),
+        @intCast((dst[2] * src_alpha_reciprocal) / 0xFF),
+    };
+    const src_blend = [3]u12{
+        @intCast((src[0] * dst_alpha_reciprocal) / 0xFF),
+        @intCast((src[1] * dst_alpha_reciprocal) / 0xFF),
+        @intCast((src[2] * dst_alpha_reciprocal) / 0xFF),
+    };
+
+    return argb8888{
+        .b = sRGB.encodeU12(src_blend[0] + dst_blend[0]),
+        .g = sRGB.encodeU12(src_blend[1] + dst_blend[1]),
+        .r = sRGB.encodeU12(src_blend[2] + dst_blend[2]),
+        .a = @intCast(((src_encoded.a * dst_alpha_reciprocal) / 0xFF) + ((dst_encoded.a * src_alpha_reciprocal) / 0xFF)),
+    };
+}
+
+test compositeXor {
+    try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
+    try std.testing.expectEqual(argb8888.WHITE, compositeXor(argb8888.WHITE, argb8888.TRANSPARENT));
+    try std.testing.expectEqual(argb8888.BLACK, compositeXor(argb8888.TRANSPARENT, argb8888.BLACK));
+    try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.WHITE, argb8888.BLACK));
 }
 
 pub fn compositeSrcOverF64(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
@@ -153,6 +203,8 @@ pub fn compositeSrcOverF64(dst_encoded: argb8888, src_encoded: argb8888) argb888
         .a = src.a + dst.a * (1.0 - src.a),
     }).toArgb8888();
 }
+
+// TODO: add testing based on microsofts float -> srgb specification https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm#FLOATtoSRGB
 
 test "u32 compositing introduces minimal error" {
     // TODO: use std.testing.fuzz in 0.14
@@ -190,27 +242,54 @@ pub const sRGB = enum(u8) {
         return ENCODE_U12_LINEAR_TO_U8_SRGB[component_linear];
     }
 
+    test encodeU12 {
+        try std.testing.expectEqual(@as(sRGB, @enumFromInt(0)), encodeU12(0));
+        try std.testing.expectEqual(@as(sRGB, @enumFromInt(std.math.maxInt(u8))), encodeU12(std.math.maxInt(u12)));
+    }
+
     /// Converts a color component from a compressed 8-bit encoding to a linear u12 value.
     pub fn decodeU12(component_srgb: sRGB) u12 {
         return DECODE_U8_SRGB_TO_U12_LINEAR[@intFromEnum(component_srgb)];
+    }
+
+    test decodeU12 {
+        try std.testing.expectEqual(@as(u12, 0), decodeU12(@enumFromInt(0)));
+        try std.testing.expectEqual(@as(u12, std.math.maxInt(u12)), decodeU12(@enumFromInt(std.math.maxInt(u8))));
     }
 
     /// Converts a color component from a linear 0..1 space to a compressed 8-bit encoding.
     ///
     /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
     pub fn encodeNaive(comptime F: type, component_linear: F) sRGB {
+        const srgb_float = linearToSRGBFloat(F, component_linear);
+        const srgb_int: u8 = @intFromFloat(srgb_float * std.math.maxInt(u8));
+        return @enumFromInt(srgb_int);
+    }
+
+    test encodeNaive {
+        try std.testing.expectEqual(@as(sRGB, @enumFromInt(0x00)), encodeNaive(f64, 0.0));
+        try std.testing.expectEqual(@as(sRGB, @enumFromInt(0xFF)), encodeNaive(f64, 1.0));
+    }
+
+    /// Converts a color component from a linear 0..1 space to a compressed 8-bit encoding.
+    ///
+    /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
+    pub fn linearToSRGBFloat(comptime F: type, component_linear: F) F {
         if (component_linear <= 0.0031308) {
             // lower end of the sRGB encoding is linear
-            return @enumFromInt(@as(u8, @intFromFloat(component_linear * 12.92 * std.math.maxInt(u8))));
+            return component_linear * 12.92;
+        } else if (component_linear < 1.0) {
+            // higher end of value range is exponential
+            return std.math.pow(F, 1.055 * component_linear, 1.0 / 2.4) - 0.055;
+        } else {
+            return 1.0;
         }
-        // higher end of value range is exponential
-        return @enumFromInt(@as(u8, @intFromFloat((std.math.pow(F, 1.055 * component_linear, 1.0 / 2.4) - 0.055) * std.math.maxInt(u8))));
     }
 
     const DECODE_U8_SRGB_TO_U12_LINEAR = createDecodeTable(u12);
-    fn createDecodeTable(Int: type) [std.math.maxInt(u8)]Int {
+    fn createDecodeTable(Int: type) [std.math.maxInt(u8) + 1]Int {
         @setEvalBranchQuota(100_000);
-        var table: [std.math.maxInt(u8)]Int = undefined;
+        var table: [std.math.maxInt(u8) + 1]Int = undefined;
         for (table[0..], 0..) |*val, idx| {
             val.* = @as(u12, @intFromFloat(decodeNaive(f64, @enumFromInt(idx)) * std.math.maxInt(Int)));
         }
@@ -218,9 +297,9 @@ pub const sRGB = enum(u8) {
     }
 
     const ENCODE_U12_LINEAR_TO_U8_SRGB = createEncodeTable(u12);
-    fn createEncodeTable(Int: type) [std.math.maxInt(Int)]sRGB {
+    fn createEncodeTable(Int: type) [std.math.maxInt(Int) + 1]sRGB {
         @setEvalBranchQuota(1_000_000);
-        var table: [std.math.maxInt(Int)]sRGB = undefined;
+        var table: [std.math.maxInt(Int) + 1]sRGB = undefined;
         for (table[0..], 0..) |*val, idx| {
             val.* = encodeNaive(f64, @as(f64, @floatFromInt(idx)) / std.math.maxInt(Int));
         }
