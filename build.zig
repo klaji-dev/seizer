@@ -180,4 +180,17 @@ pub fn build(b: *Builder) !void {
 
     const bench_color_step = b.step("bench-color", "Run color benchmarks");
     bench_color_step.dependOn(&run_bench_color_exe.step);
+
+    const bench_image_exe = b.addExecutable(.{
+        .name = "bench_image",
+        .root_source_file = b.path("./bench/image.zig"),
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+    bench_image_exe.root_module.addImport("seizer", module);
+    bench_image_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    const run_bench_image_exe = b.addRunArtifact(bench_image_exe);
+
+    const bench_image_step = b.step("bench-image", "Run image benchmarks");
+    bench_image_step.dependOn(&run_bench_image_exe.step);
 }
