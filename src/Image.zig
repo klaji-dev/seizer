@@ -96,7 +96,9 @@ pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: [4]u8) void {
     while (row < max[1]) : (row += 1) {
         const start_of_row: u32 = @intCast(row * this.stride);
         const row_buffer = this.pixels[start_of_row..][min[0]..max[0]];
-        @memset(row_buffer, color);
+        for (row_buffer) |*pixel| {
+            pixel.* = seizer.color.compositeAOverB(color, pixel.*);
+        }
     }
 }
 

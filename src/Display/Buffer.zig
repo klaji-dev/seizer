@@ -34,6 +34,7 @@ const CANVAS_INTERFACE: *const seizer.Canvas.Interface = &.{
     .size = canvas_size,
     .blit = canvas_blit,
     .texture_rect = canvas_textureRect,
+    .fill_rect = canvas_fillRect,
     .line = canvas_line,
 };
 
@@ -74,6 +75,21 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.Imag
     const dest = this.image().slice(dest_offset, src_size);
 
     dest.composite(src);
+}
+
+pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, options: seizer.Canvas.RectOptions) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
+    const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
+
+    const color_u8 = [4]u8{
+        @intFromFloat(options.color[0] * std.math.maxInt(u8)),
+        @intFromFloat(options.color[1] * std.math.maxInt(u8)),
+        @intFromFloat(options.color[2] * std.math.maxInt(u8)),
+        @intFromFloat(options.color[3] * std.math.maxInt(u8)),
+    };
+
+    this.image().drawFillRect(a, b, color_u8);
 }
 
 pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.Image, options: seizer.Canvas.RectOptions) void {
