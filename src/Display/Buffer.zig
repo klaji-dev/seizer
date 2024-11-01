@@ -122,9 +122,9 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
                 @intFromFloat(texture_coord[1]),
             }));
             const src_pixel_tint = seizer.color.ux4FromFx4(u8, f64, .{
-                src_pixel[0] * options.color[0],
-                src_pixel[1] * options.color[1],
                 src_pixel[2] * options.color[2],
+                src_pixel[1] * options.color[1],
+                src_pixel[0] * options.color[0],
                 src_pixel[3] * options.color[3],
             });
             // TODO: composite
