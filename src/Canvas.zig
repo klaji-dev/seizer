@@ -35,6 +35,65 @@ pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOpti
 
 // Stuff that is implemented on top of the base functions
 
+pub const NinePatch = struct {
+    image: seizer.Image,
+    inset: seizer.geometry.Inset(u32),
+
+    pub const Options = struct {
+        depth: f64 = 0.5,
+        color: [4]f64 = .{ 1, 1, 1, 1 },
+        scale: f64 = 1,
+    };
+
+    pub fn init(image: seizer.Image, inset: seizer.geometry.Inset(u32)) NinePatch {
+        return .{ .image = image, .inset = inset };
+    }
+
+    pub fn images(this: @This()) [9]seizer.Image {
+        const left = this.inset.min[0];
+        const top = this.inset.min[1];
+        const right = this.image.size[0] - this.inset.max[0];
+        const bot = this.image.size[1] - this.inset.max[1];
+        return [9]seizer.Image{
+            // Inside first
+            this.image.slice(this.inset.min, .{ right - left, bot - top }),
+            // Edges second
+            this.image.slice(.{ left, 0 }, .{ right - left, top }), // top
+            this.image.slice(.{ 0, top }, .{ left, bot - top }), // left
+            this.image.slice(.{ right, top }, .{ this.inset.max[0], bot - top }), // right
+            this.image.slice(.{ left, bot }, .{ right - left, this.inset.max[1] }), // bottom
+            // Corners third
+            this.image.slice(.{ 0, 0 }, this.inset.min), // top left
+            this.image.slice(.{ right, 0 }, .{ this.inset.max[0], top }), // top right
+            this.image.slice(.{ 0, bot }, .{ left, this.inset.max[1] }), // bottom left
+            this.image.slice(.{ right, bot }, this.inset.max), // bottom right
+        };
+    }
+};
+
+pub fn ninePatch(this: @This(), pos: [2]f64, size: [2]f64, image: seizer.Image, inset: geometry.Inset(u32), options: NinePatch.Options) void {
+    const images = NinePatch.images(.{ .image = image, .inset = inset });
+    const scaled_inset = inset.intToFloat(f64).scale(options.scale);
+
+    const x: [4]f64 = .{ pos[0], pos[0] + scaled_inset.min[0], pos[0] + size[0] - scaled_inset.min[0], pos[0] + size[0] };
+    const y: [4]f64 = .{ pos[1], pos[1] + scaled_inset.min[1], pos[1] + size[1] - scaled_inset.min[1], pos[1] + size[1] };
+    const w: [3]f64 = .{ x[1] - x[0], x[2] - x[1], x[3] - x[2] };
+    const h: [3]f64 = .{ y[1] - y[0], y[2] - y[1], y[3] - y[2] };
+
+    // Inside first
+    this.textureRect(.{ x[1], y[1] }, .{ w[1], h[1] }, images[0], .{ .depth = options.depth, .color = options.color });
+    // Edges second
+    this.textureRect(.{ x[1], y[0] }, .{ w[1], h[0] }, images[1], .{ .depth = options.depth, .color = options.color }); // top
+    this.textureRect(.{ x[0], y[1] }, .{ w[0], h[1] }, images[2], .{ .depth = options.depth, .color = options.color }); // left
+    this.textureRect(.{ x[2], y[1] }, .{ w[2], h[1] }, images[3], .{ .depth = options.depth, .color = options.color }); // right
+    this.textureRect(.{ x[1], y[2] }, .{ w[1], h[2] }, images[4], .{ .depth = options.depth, .color = options.color }); // bottom
+    // Corners third
+    this.textureRect(.{ x[0], y[0] }, .{ w[0], h[0] }, images[5], .{ .depth = options.depth, .color = options.color }); // top left
+    this.textureRect(.{ x[2], y[0] }, .{ w[2], h[0] }, images[6], .{ .depth = options.depth, .color = options.color }); // top right
+    this.textureRect(.{ x[0], y[2] }, .{ w[0], h[2] }, images[7], .{ .depth = options.depth, .color = options.color }); // bottom left
+    this.textureRect(.{ x[2], y[2] }, .{ w[2], h[2] }, images[8], .{ .depth = options.depth, .color = options.color }); // bottom right
+}
+
 pub const TextOptions = struct {
     depth: f64 = 0.5,
     color: [4]f64 = .{ 1, 1, 1, 1 },

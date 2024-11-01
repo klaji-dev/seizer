@@ -94,12 +94,33 @@ pub fn Inset(comptime T: type) type {
         /// How far inward from the bottom right corner is this Inset?
         max: [2]T,
 
+        pub fn initXY(x: T, y: T) @This() {
+            return .{
+                .min = .{ x, y },
+                .max = .{ x, y },
+            };
+        }
+
         /// Gives the extra size that this inset would add, or a negative number if it would decrease
         /// the size.
-        pub fn size(this: @This()) [2]f32 {
+        pub fn size(this: @This()) [2]T {
             return .{
                 this.min[0] + this.max[0],
                 this.min[1] + this.max[1],
+            };
+        }
+
+        pub fn scale(this: @This(), scalar: T) @This() {
+            return .{
+                .min = .{ this.min[0] * scalar, this.min[1] * scalar },
+                .max = .{ this.max[0] * scalar, this.max[1] * scalar },
+            };
+        }
+
+        pub fn intToFloat(this: @This(), comptime F: type) Inset(F) {
+            return .{
+                .min = .{ @floatFromInt(this.min[0]), @floatFromInt(this.min[1]) },
+                .max = .{ @floatFromInt(this.max[0]), @floatFromInt(this.max[1]) },
             };
         }
     };
