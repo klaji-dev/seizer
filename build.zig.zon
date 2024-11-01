@@ -31,5 +31,9 @@
             .url = "https://git.sr.ht/~geemili/shimizu/archive/a39eb4935c36b1ede38b34491f8eda93af01d4fe.tar.gz",
             .hash = "12202790861db271425630f57bef87fde01e3a0d043e6dbaadbe28d22986bbf3968c",
         },
+        .zbench = .{
+            .url = "https://github.com/hendriknielaender/zBench/archive/0d5417d53e38026503cf993ef9aa24a5fa9554dc.tar.gz",
+            .hash = "12202e943486d4351fcc633aed880df43e9025f8866c746619da284a3048ef529233",
+        },
     },
 }

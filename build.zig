@@ -148,4 +148,36 @@ pub fn build(b: *Builder) !void {
 
         check_step.dependOn(&exe_check.step);
     }
+
+    // benchmarks
+    const module_test_exe = b.addTest(.{
+        .root_source_file = b.path("./src/seizer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module_test_exe.root_module.addImport("seizer", module);
+    const run_module_test_exe = b.addRunArtifact(module_test_exe);
+
+    const test_step = b.step("test", "Run seizer module tests");
+    test_step.dependOn(&run_module_test_exe.step);
+
+    // benchmarks
+    const benchmark_optimize = std.builtin.OptimizeMode.ReleaseFast;
+    const zbench_dep = b.dependency("zbench", .{
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+
+    const bench_color_exe = b.addExecutable(.{
+        .name = "bench_color",
+        .root_source_file = b.path("./bench/color.zig"),
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+    bench_color_exe.root_module.addImport("seizer", module);
+    bench_color_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    const run_bench_color_exe = b.addRunArtifact(bench_color_exe);
+
+    const bench_color_step = b.step("bench-color", "Run color benchmarks");
+    bench_color_step.dependOn(&run_bench_color_exe.step);
 }

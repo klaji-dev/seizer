@@ -62,5 +62,11 @@ pub fn setDeinit(new_deinit_fn: ?seizer.DeinitFn) void {
     deinit_fn = new_deinit_fn;
 }
 
+comptime {
+    if (builtin.is_test) {
+        _ = color;
+    }
+}
+
 const builtin = @import("builtin");
 const std = @import("std");

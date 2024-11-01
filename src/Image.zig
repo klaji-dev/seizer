@@ -26,9 +26,9 @@ pub fn fromMemory(allocator: std.mem.Allocator, file_contents: []const u8) !@Thi
     // pre-multiply the image
     for (pixels, img.pixels.rgba32) |*out, in| {
         out.* = .{
-            .b = @intCast((@as(u16, in.b) * @as(u16, in.a)) >> 8),
-            .g = @intCast((@as(u16, in.g) * @as(u16, in.a)) >> 8),
-            .r = @intCast((@as(u16, in.r) * @as(u16, in.a)) >> 8),
+            .b = @enumFromInt(@as(u8, @intCast((@as(u16, in.b) * @as(u16, in.a)) >> 8))),
+            .g = @enumFromInt(@as(u8, @intCast((@as(u16, in.g) * @as(u16, in.a)) >> 8))),
+            .r = @enumFromInt(@as(u8, @intCast((@as(u16, in.r) * @as(u16, in.a)) >> 8))),
             .a = in.a,
         };
     }
@@ -188,10 +188,6 @@ pub fn resize(dst: @This(), src: @This()) void {
         @floatFromInt(src.size[1]),
     };
 
-    // const B = 1.0 / 3.0;
-    // const C = 1.0 / 3.0;
-    const u8_max: @Vector(4, f64) = @splat(std.math.maxInt(u8) + 1.0);
-
     for (0..dst.size[1]) |dst_y| {
         for (0..dst.size[0]) |dst_x| {
             const uv = [2]f64{
@@ -232,29 +228,30 @@ pub fn resize(dst: @This(), src: @This()) void {
 
             var row_interpolations: [4][4]f64 = undefined;
             for (0..4, row_indices) |interpolation_idx, row_idxf| {
-                const row_idx: i32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1]));
+                // TODO: set out of bounds pixels to transparent instead of repeating row
+                const row_idx: i32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1] - 1));
                 // transpose so we can multiply by each color channel separately
-                const src_row_pixels = seizer.geometry.mat.transpose(4, 4, u8, [4][4]u8{
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0])), row_idx }).toBytes(),
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0])), row_idx }).toBytes(),
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0])), row_idx }).toBytes(),
-                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0])), row_idx }).toBytes(),
+                const src_row_pixels = seizer.geometry.mat.transpose(4, 4, f64, [4][4]f64{
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
+                    src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
                 });
 
                 for (0..4, src_row_pixels[0..4]) |interpolation_channel, channel| {
-                    const channel_v: @Vector(4, f64) = @floatFromInt(@as(@Vector(4, u8), channel));
-                    row_interpolations[interpolation_channel][interpolation_idx] = @reduce(.Add, kernel_x * (channel_v / u8_max));
+                    const channel_v: @Vector(4, f64) = channel;
+                    row_interpolations[interpolation_channel][interpolation_idx] = @reduce(.Add, kernel_x * channel_v);
                 }
             }
 
-            var out_pixel: [4]u8 = undefined;
+            var out_pixel: [4]f64 = undefined;
 
             for (out_pixel[0..], row_interpolations[0..]) |*out_channel, channel| {
                 const channel_v: @Vector(4, f64) = channel;
-                out_channel.* = @intFromFloat(std.math.clamp(@reduce(.Add, kernel_y * channel_v) * std.math.maxInt(u8), 0, std.math.maxInt(u8)));
+                out_channel.* = std.math.clamp(@reduce(.Add, kernel_y * channel_v), 0, 1);
             }
 
-            dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argb8888.fromBytes(out_pixel));
+            dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argb.fromArray(out_pixel).toArgb8888());
         }
     }
 }
