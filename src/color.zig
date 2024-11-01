@@ -1,12 +1,20 @@
 pub fn compositeAOverB(a: [4]u8, b: [4]u8) [4]u8 {
-    const a_mult: @Vector(3, u16) = @splat(a[3]);
-    const b_mult: @Vector(3, u16) = @splat((@as(u16, b[3]) * (0xFF - a[3])) >> 8);
+    const a_alpha = @as(f64, @floatFromInt(a[3])) / std.math.maxInt(u8);
+    const b_alpha = @as(f64, @floatFromInt(b[3])) / std.math.maxInt(u8);
 
-    const a_vec: @Vector(3, u16) = a[0..3].*;
-    const b_vec: @Vector(3, u16) = b[0..3].*;
-    const out: [3]u16 = (a_vec * a_mult + b_vec * b_mult) / (a_mult + b_mult);
-    const out_alpha: [3]u16 = a_mult + b_mult;
-    return .{ @intCast(out[0]), @intCast(out[1]), @intCast(out[2]), @intCast(out_alpha[0]) };
+    const a_mult: @Vector(3, f64) = @splat(a_alpha);
+    const b_mult: @Vector(3, f64) = @splat(b_alpha * (1.0 - a_alpha));
+
+    var a_vec: @Vector(3, f64) = @floatFromInt(@as(@Vector(3, u8), a[0..3].*));
+    a_vec /= @splat(std.math.maxInt(u8));
+
+    var b_vec: @Vector(3, f64) = @floatFromInt(@as(@Vector(3, u8), b[0..3].*));
+    b_vec /= @splat(std.math.maxInt(u8));
+
+    const out: [3]u8 = @as(@Vector(3, u8), @intFromFloat(((a_vec * a_mult + b_vec * b_mult) / (a_mult + b_mult)) * @as(@Vector(3, f64), @splat(std.math.maxInt(u8)))));
+    const out_alpha: [3]f64 = a_mult + b_mult;
+
+    return .{ out[0], out[1], out[2], @intFromFloat(out_alpha[0] * std.math.maxInt(u8)) };
 }
 
 pub fn fx4FromUx4(F: type, U: type, a: [4]U) [4]F {
