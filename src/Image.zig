@@ -163,16 +163,16 @@ pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: seizer.color.argb888
     }
 }
 
-    if (pos[0] < 0 or pos[0] >= this.size[0]) return;
-    if (pos[1] < 0 or pos[1] >= this.size[1]) return;
 pub fn setPixel(this: @This(), pos: [2]i32, color: seizer.color.argb8888) void {
+    std.debug.assert(pos[0] >= 0 and pos[0] < this.size[0]);
+    std.debug.assert(pos[1] >= 0 and pos[1] < this.size[1]);
     const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
     this.pixels[@intCast(posu[1] * this.stride + posu[0])] = color;
 }
 
-    std.debug.assert(pos[0] >= 0 or pos[0] < this.size[0]);
-    std.debug.assert(pos[1] >= 0 or pos[1] < this.size[1]);
 pub fn getPixel(this: @This(), pos: [2]i32) seizer.color.argb8888 {
+    std.debug.assert(pos[0] >= 0 and pos[0] < this.size[0]);
+    std.debug.assert(pos[1] >= 0 and pos[1] < this.size[1]);
     const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
     return this.pixels[@intCast(posu[1] * this.stride + posu[0])];
 }
