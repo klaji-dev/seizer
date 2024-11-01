@@ -80,7 +80,7 @@ fn onWlBufferEvent(listener: *shimizu.Listener, wl_buffer: shimizu.Proxy(shimizu
     }
 }
 
-const Image = @import("../Image.zig");
+const Image = seizer.image.Image(seizer.color.argb8888);
 const Buffer = @import("./Buffer.zig");
 
 const seizer = @import("../seizer.zig");

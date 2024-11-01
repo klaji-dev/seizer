@@ -10,21 +10,21 @@ clicked_style: Style,
 
 on_click: ?ui.Callable(fn (*@This()) void) = null,
 
-const RECT_COLOR_DEFAULT = seizer.color.argb.fromArray(.{ 0x30.0 / 0xFF.0, 0x30.0 / 0xFF.0, 0x30.0 / 0xFF.0, 1 });
-const RECT_COLOR_HOVERED = seizer.color.argb.fromArray(.{ 0x50.0 / 0xFF.0, 0x50.0 / 0xFF.0, 0x50.0 / 0xFF.0, 1 });
-const RECT_COLOR_CLICKED = seizer.color.argb.fromArray(.{ 0x70.0 / 0xFF.0, 0x70.0 / 0xFF.0, 0x70.0 / 0xFF.0, 1 });
+const RECT_COLOR_DEFAULT = seizer.color.argb(f64).fromArray(.{ 0x30.0 / 0xFF.0, 0x30.0 / 0xFF.0, 0x30.0 / 0xFF.0, 1 });
+const RECT_COLOR_HOVERED = seizer.color.argb(f64).fromArray(.{ 0x50.0 / 0xFF.0, 0x50.0 / 0xFF.0, 0x50.0 / 0xFF.0, 1 });
+const RECT_COLOR_CLICKED = seizer.color.argb(f64).fromArray(.{ 0x70.0 / 0xFF.0, 0x70.0 / 0xFF.0, 0x70.0 / 0xFF.0, 1 });
 
-const TEXT_COLOR_DEFAULT = seizer.color.argb.fromArray(.{ 1, 1, 1, 1 });
-const TEXT_COLOR_HOVERED = seizer.color.argb.fromArray(.{ 1, 1, 0.5, 1 });
-const TEXT_COLOR_CLICKED = seizer.color.argb.fromArray(.{ 1, 1, 0, 1 });
+const TEXT_COLOR_DEFAULT = seizer.color.argb(f64).fromArray(.{ 1, 1, 1, 1 });
+const TEXT_COLOR_HOVERED = seizer.color.argb(f64).fromArray(.{ 1, 1, 0.5, 1 });
+const TEXT_COLOR_CLICKED = seizer.color.argb(f64).fromArray(.{ 1, 1, 0, 1 });
 
 pub const Style = struct {
     padding: seizer.geometry.Inset(f64),
     text_font: *const seizer.Canvas.Font,
     text_scale: f64,
-    text_color: seizer.color.argb,
+    text_color: seizer.color.argb(f64),
     background_ninepatch: ?seizer.Canvas.NinePatch = null,
-    background_color: seizer.color.argb,
+    background_color: seizer.color.argb(f64),
 };
 
 pub fn create(stage: *ui.Stage, text: []const u8) !*@This() {

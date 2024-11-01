@@ -264,18 +264,18 @@ pub const Style = struct {
     padding: seizer.geometry.Inset(f64),
     text_font: *const Font,
     text_scale: f64,
-    text_color: seizer.color.argb,
+    text_color: seizer.color.argb(f64),
     background_image: seizer.Canvas.NinePatch,
-    background_color: seizer.color.argb,
+    background_color: seizer.color.argb(f64),
 
     /// Override specific fields without having to type them all out.
     pub fn with(inherited: @This(), overrides: struct {
         padding: ?seizer.geometry.Inset(f64) = null,
         text_font: ?*const Font = null,
         text_scale: ?f64 = null,
-        text_color: ?seizer.color.argb = null,
+        text_color: ?seizer.color.argb(f64) = null,
         background_image: ?seizer.Canvas.NinePatch = null,
-        background_color: ?seizer.color.argb = null,
+        background_color: ?seizer.color.argb(f64) = null,
     }) @This() {
         return @This(){
             .padding = overrides.padding orelse inherited.padding,

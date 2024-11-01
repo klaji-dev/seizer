@@ -22,63 +22,80 @@
 ///   light behind it (`a`)".
 ///
 /// The component order (BGRA) was chosen to match Linux's DRM_FOURCC `argb8888` format.
-pub const argb = extern struct {
-    /// How much `blue` light this object is emitting/reflecting
-    b: f64,
-    /// How much `green` light this object is emitting/reflecting
-    g: f64,
-    /// How much `red` light this object is emitting/reflecting
-    r: f64,
-    /// How much of the light this object blocks from objects behind it.
-    a: f64,
+pub fn argb(F: type) type {
+    return extern struct {
+        /// How much `blue` light this object is emitting/reflecting
+        b: F,
+        /// How much `green` light this object is emitting/reflecting
+        g: F,
+        /// How much `red` light this object is emitting/reflecting
+        r: F,
+        /// How much of the light this object blocks from objects behind it.
+        a: F,
 
-    pub const WHITE: argb = .{ .b = 1, .g = 1, .r = 1, .a = 1 };
-    pub const BLACK: argb = .{ .b = 0, .g = 0, .r = 0, .a = 1 };
+        pub const WHITE: @This() = .{ .b = 1, .g = 1, .r = 1, .a = 1 };
+        pub const BLACK: @This() = .{ .b = 0, .g = 0, .r = 0, .a = 1 };
 
-    pub fn fromArray(array: [4]f64) @This() {
-        return .{ .b = array[0], .g = array[1], .r = array[2], .a = array[3] };
-    }
+        pub fn fromArray(array: [4]F) @This() {
+            return .{ .b = array[0], .g = array[1], .r = array[2], .a = array[3] };
+        }
 
-    pub fn toArray(this: @This()) [4]f64 {
-        return .{ this.b, this.g, this.r, this.a };
-    }
+        pub fn toArray(this: @This()) [4]F {
+            return .{ this.b, this.g, this.r, this.a };
+        }
 
-    pub fn toArgb8888(this: @This()) argb8888 {
-        return .{
-            .b = sRGB.encodeNaive(f64, this.b),
-            .g = sRGB.encodeNaive(f64, this.g),
-            .r = sRGB.encodeNaive(f64, this.r),
-            .a = @intFromFloat(this.a * std.math.maxInt(u8)),
-        };
-    }
+        /// Convert from sRGB encoded values to linear sRGB values.
+        ///
+        /// Necessary to support use in seizer.image.Image
+        pub fn fromArgb8888(encoded: argb8888) @This() {
+            return .{
+                .b = sRGB.decodeNaive(F, encoded.b),
+                .g = sRGB.decodeNaive(F, encoded.g),
+                .r = sRGB.decodeNaive(F, encoded.r),
+                .a = @as(F, @floatFromInt(encoded.a)) / std.math.maxInt(u8),
+            };
+        }
 
-    pub fn fromRGBUnassociatedAlpha(r: f64, g: f64, b: f64, a: f64) @This() {
-        return .{
-            .b = b * a,
-            .g = g * a,
-            .r = r * a,
-            .a = a,
-        };
-    }
+        /// Convert from sRGB encoded values to linear sRGB values.
+        ///
+        /// Necessary to support use in seizer.image.Image
+        pub fn toArgb8888(this: @This()) argb8888 {
+            return .{
+                .b = sRGB.encodeNaive(F, this.b),
+                .g = sRGB.encodeNaive(F, this.g),
+                .r = sRGB.encodeNaive(F, this.r),
+                .a = @intFromFloat(this.a * std.math.maxInt(u8)),
+            };
+        }
 
-    pub fn compositeSrcOver(dst: argb, src: argb) argb {
-        return .{
-            .b = src.b + dst.b * (1.0 - src.a),
-            .g = src.g + dst.g * (1.0 - src.a),
-            .r = src.r + dst.r * (1.0 - src.a),
-            .a = src.a + dst.a * (1.0 - src.a),
-        };
-    }
+        pub fn fromRGBUnassociatedAlpha(r: F, g: F, b: F, a: F) @This() {
+            return .{
+                .b = b * a,
+                .g = g * a,
+                .r = r * a,
+                .a = a,
+            };
+        }
 
-    pub fn compositeXor(dst: argb, src: argb) argb {
-        return .{
-            .b = src.b * (1.0 - dst.a) + dst.b * (1.0 - src.a),
-            .g = src.g * (1.0 - dst.a) + dst.g * (1.0 - src.a),
-            .r = src.r * (1.0 - dst.a) + dst.r * (1.0 - src.a),
-            .a = src.a * (1.0 - dst.a) + dst.a * (1.0 - src.a),
-        };
-    }
-};
+        pub fn compositeSrcOver(dst: argb, src: argb) argb {
+            return .{
+                .b = src.b + dst.b * (1.0 - src.a),
+                .g = src.g + dst.g * (1.0 - src.a),
+                .r = src.r + dst.r * (1.0 - src.a),
+                .a = src.a + dst.a * (1.0 - src.a),
+            };
+        }
+
+        pub fn compositeXor(dst: argb, src: argb) argb {
+            return .{
+                .b = src.b * (1.0 - dst.a) + dst.b * (1.0 - src.a),
+                .g = src.g * (1.0 - dst.a) + dst.g * (1.0 - src.a),
+                .r = src.r * (1.0 - dst.a) + dst.r * (1.0 - src.a),
+                .a = src.a * (1.0 - dst.a) + dst.a * (1.0 - src.a),
+            };
+        }
+    };
+}
 
 /// 3 8-bit sRGB encoded colors premultiplied with an linear 8-bit alpha component.
 ///
@@ -109,8 +126,18 @@ pub const argb8888 = packed struct(u32) {
     pub const BLACK: @This() = .{ .b = @enumFromInt(0x00), .g = @enumFromInt(0x00), .r = @enumFromInt(0x00), .a = 0xFF };
     pub const WHITE: @This() = .{ .b = @enumFromInt(0xFF), .g = @enumFromInt(0xFF), .r = @enumFromInt(0xFF), .a = 0xFF };
 
+    /// Necessary for seizer.image.Image type
+    pub fn fromArgb8888(encoded: argb8888) @This() {
+        return encoded;
+    }
+
+    /// Necessary for seizer.image.Image type
+    pub fn toArgb8888(this: @This()) argb8888 {
+        return this;
+    }
+
     /// Convert from sRGB encoded values to linear RGB values.
-    pub fn toArgb(this: @This()) argb {
+    pub fn toArgb(this: @This()) argb(f64) {
         return .{
             .b = sRGB.decodeNaive(f64, this.b),
             .g = sRGB.decodeNaive(f64, this.g),

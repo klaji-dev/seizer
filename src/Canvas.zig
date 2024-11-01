@@ -8,22 +8,22 @@ interface: *const Interface,
 pub const Interface = struct {
     /// The size of the renderable area
     size: *const fn (?*anyopaque) [2]f64,
-    blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.Image) void,
-    texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.Image, options: RectOptions) void,
+    blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.image.Image(seizer.color.argb8888)) void,
+    texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Image(seizer.color.argb8888), options: RectOptions) void,
     fill_rect: *const fn (?*anyopaque, pos: [2]f64, size: [2]f64, options: RectOptions) void,
     line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };
 
-pub fn blit(this: @This(), pos: [2]f64, image: seizer.Image) void {
+pub fn blit(this: @This(), pos: [2]f64, image: seizer.image.Image(seizer.color.argb8888)) void {
     return this.interface.blit(this.ptr, pos, image);
 }
 
 pub const RectOptions = struct {
     depth: f64 = 0.5,
-    color: seizer.color.argb = seizer.color.argb.WHITE,
+    color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
 };
 
-pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.Image, options: RectOptions) void {
+pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Image(seizer.color.argb8888), options: RectOptions) void {
     return this.interface.texture_rect(this.ptr, dst_pos, dst_size, image, options);
 }
 
@@ -34,7 +34,7 @@ pub fn fillRect(this: @This(), pos: [2]f64, size: [2]f64, options: RectOptions) 
 pub const LineOptions = struct {
     depth: f64 = 0.5,
     width: f64 = 1,
-    color: seizer.color.argb = seizer.color.argb.WHITE,
+    color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
 };
 
 pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOptions) void {
@@ -44,25 +44,25 @@ pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOpti
 // Stuff that is implemented on top of the base functions
 
 pub const NinePatch = struct {
-    image: seizer.Image,
+    image: seizer.image.Image(seizer.color.argb8888),
     inset: seizer.geometry.Inset(u32),
 
     pub const Options = struct {
         depth: f64 = 0.5,
-        color: seizer.color.argb = seizer.color.argb.WHITE,
+        color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
         scale: f64 = 1,
     };
 
-    pub fn init(image: seizer.Image, inset: seizer.geometry.Inset(u32)) NinePatch {
+    pub fn init(image: seizer.image.Image(seizer.color.argb8888), inset: seizer.geometry.Inset(u32)) NinePatch {
         return .{ .image = image, .inset = inset };
     }
 
-    pub fn images(this: @This()) [9]seizer.Image {
+    pub fn images(this: @This()) [9]seizer.image.Image(seizer.color.argb8888) {
         const left = this.inset.min[0];
         const top = this.inset.min[1];
         const right = this.image.size[0] - this.inset.max[0];
         const bot = this.image.size[1] - this.inset.max[1];
-        return [9]seizer.Image{
+        return [9]seizer.image.Image(seizer.color.argb8888){
             // Inside first
             this.image.slice(this.inset.min, .{ right - left, bot - top }),
             // Edges second
@@ -79,7 +79,7 @@ pub const NinePatch = struct {
     }
 };
 
-pub fn ninePatch(this: @This(), pos: [2]f64, size: [2]f64, image: seizer.Image, inset: geometry.Inset(u32), options: NinePatch.Options) void {
+pub fn ninePatch(this: @This(), pos: [2]f64, size: [2]f64, image: seizer.image.Image(seizer.color.argb8888), inset: geometry.Inset(u32), options: NinePatch.Options) void {
     const images = NinePatch.images(.{ .image = image, .inset = inset });
     const scaled_inset = inset.intToFloat(f64).scale(options.scale);
 
@@ -104,7 +104,7 @@ pub fn ninePatch(this: @This(), pos: [2]f64, size: [2]f64, image: seizer.Image, 
 
 pub const TextOptions = struct {
     depth: f64 = 0.5,
-    color: seizer.color.argb = seizer.color.argb.WHITE,
+    color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
     scale: f64 = 1,
     @"align": Align = .left,
     baseline: Baseline = .top,
@@ -172,7 +172,7 @@ pub const TextLayoutWriter = Font.TextLayoutWriter(WriteGlyphContext, writeGlyph
 pub const TextLayoutOptions = struct {
     pos: [2]f64 = .{ 0, 0 },
     scale: f64 = 1,
-    color: seizer.color.argb = seizer.color.argb.WHITE,
+    color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
 };
 
 pub fn textLayoutWriter(this: @This(), font: *const Font, options: TextLayoutOptions) TextLayoutWriter {

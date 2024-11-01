@@ -2,11 +2,11 @@ wl_buffer: shimizu.Proxy(shimizu.core.wl_buffer),
 size: [2]u32,
 pixels: [*]seizer.color.argb8888,
 
-pub fn clear(this: @This(), color: seizer.color.argb) void {
+pub fn clear(this: @This(), color: seizer.color.argb(f64)) void {
     @memset(this.pixels[0 .. this.size[0] * this.size[1]], color.toArgb8888());
 }
 
-pub fn image(this: @This()) seizer.Image {
+pub fn image(this: @This()) seizer.image.Image(seizer.color.argb8888) {
     return .{
         .size = this.size,
         .stride = this.size[0],
@@ -34,7 +34,7 @@ pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
     return .{ @floatFromInt(this.size[0]), @floatFromInt(this.size[1]) };
 }
 
-pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.Image) void {
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argb8888)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
     const pos_i = [2]i32{
         @intFromFloat(@floor(pos[0])),
@@ -76,7 +76,7 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
     this.image().drawFillRect(a, b, options.color.toArgb8888());
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.Image, options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argb8888), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const start_pos = [2]u32{

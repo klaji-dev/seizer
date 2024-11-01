@@ -2,12 +2,12 @@
 pub const color = @import("./color.zig");
 pub const colormaps = @import("./colormaps.zig");
 pub const geometry = @import("./geometry.zig");
+pub const image = @import("./image.zig");
 pub const input = @import("./input.zig");
 pub const ui = @import("./ui.zig");
 
 pub const Canvas = @import("./Canvas.zig");
 pub const Display = @import("./Display.zig");
-pub const Image = @import("./Image.zig");
 
 // re-exported libraries
 pub const tvg = @import("tvg");
