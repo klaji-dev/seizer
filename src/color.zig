@@ -60,6 +60,15 @@ pub const argb = extern struct {
             .a = a,
         };
     }
+
+    pub fn compositeSrcOver(dst: argb, src: argb) argb {
+        return .{
+            .b = src.b + dst.b * (1.0 - src.a),
+            .g = src.g + dst.g * (1.0 - src.a),
+            .r = src.r + dst.r * (1.0 - src.a),
+            .a = src.a + dst.a * (1.0 - src.a),
+        };
+    }
 };
 
 /// 3 8-bit sRGB encoded colors premultiplied with an linear 8-bit alpha component.
@@ -100,138 +109,127 @@ pub const argb8888 = packed struct(u32) {
             .a = @as(f64, @floatFromInt(this.a)) / std.math.maxInt(u8),
         };
     }
-};
 
-pub fn tint(src_encoded: argb8888, mask_encoded: argb8888) argb8888 {
-    // TODO: Research tinting. Should the mask be sRGB encoded or linear?
-    const src: [4]u32 = .{
-        src_encoded.b.decodeU12(),
-        src_encoded.g.decodeU12(),
-        src_encoded.r.decodeU12(),
-        src_encoded.a,
-    };
-    const mask: [4]u32 = .{
-        mask_encoded.b.decodeU12(),
-        mask_encoded.g.decodeU12(),
-        mask_encoded.r.decodeU12(),
-        mask_encoded.a,
-    };
-    return argb8888{
-        .b = sRGB.encodeU12(@truncate((src[0] * mask[0]) >> 12)),
-        .g = sRGB.encodeU12(@truncate((src[1] * mask[1]) >> 12)),
-        .r = sRGB.encodeU12(@truncate((src[2] * mask[2]) >> 12)),
-        .a = @truncate((src[3] * mask[3]) >> 8),
-    };
-}
-
-pub fn compositeSrcOver(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
-    const dst: [4]u32 = .{
-        dst_encoded.b.decodeU12(),
-        dst_encoded.g.decodeU12(),
-        dst_encoded.r.decodeU12(),
-        dst_encoded.a,
-    };
-    const src: [4]u32 = .{
-        src_encoded.b.decodeU12(),
-        src_encoded.g.decodeU12(),
-        src_encoded.r.decodeU12(),
-        src_encoded.a,
-    };
-    return argb8888{
-        .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src[3])) / 0xFF))),
-        .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src[3])) / 0xFF))),
-        .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src[3])) / 0xFF))),
-        .a = @intCast(src[3] + ((dst[3] * (0xFF - src[3])) / 0xFF)),
-    };
-}
-
-test compositeSrcOver {
-    try std.testing.expectEqual(argb8888.TRANSPARENT, compositeSrcOver(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
-    try std.testing.expectEqual(argb8888.WHITE, compositeSrcOver(argb8888.WHITE, argb8888.TRANSPARENT));
-    try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.TRANSPARENT, argb8888.BLACK));
-    try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.WHITE, argb8888.BLACK));
-}
-
-pub fn compositeXor(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
-    const dst_alpha_reciprocal: u32 = 0xFF - dst_encoded.a;
-    const src_alpha_reciprocal: u32 = 0xFF - src_encoded.a;
-
-    const dst: [3]u32 = .{
-        dst_encoded.b.decodeU12(),
-        dst_encoded.g.decodeU12(),
-        dst_encoded.r.decodeU12(),
-    };
-    const src: [3]u32 = .{
-        src_encoded.b.decodeU12(),
-        src_encoded.g.decodeU12(),
-        src_encoded.r.decodeU12(),
-    };
-
-    const dst_blend = [3]u12{
-        @intCast((dst[0] * src_alpha_reciprocal) / 0xFF),
-        @intCast((dst[1] * src_alpha_reciprocal) / 0xFF),
-        @intCast((dst[2] * src_alpha_reciprocal) / 0xFF),
-    };
-    const src_blend = [3]u12{
-        @intCast((src[0] * dst_alpha_reciprocal) / 0xFF),
-        @intCast((src[1] * dst_alpha_reciprocal) / 0xFF),
-        @intCast((src[2] * dst_alpha_reciprocal) / 0xFF),
-    };
-
-    return argb8888{
-        .b = sRGB.encodeU12(src_blend[0] + dst_blend[0]),
-        .g = sRGB.encodeU12(src_blend[1] + dst_blend[1]),
-        .r = sRGB.encodeU12(src_blend[2] + dst_blend[2]),
-        .a = @intCast(((src_encoded.a * dst_alpha_reciprocal) / 0xFF) + ((dst_encoded.a * src_alpha_reciprocal) / 0xFF)),
-    };
-}
-
-test compositeXor {
-    try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
-    try std.testing.expectEqual(argb8888.WHITE, compositeXor(argb8888.WHITE, argb8888.TRANSPARENT));
-    try std.testing.expectEqual(argb8888.BLACK, compositeXor(argb8888.TRANSPARENT, argb8888.BLACK));
-    try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.WHITE, argb8888.BLACK));
-}
-
-pub fn compositeSrcOverF64(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
-    const dst = dst_encoded.toArgb();
-    const src = src_encoded.toArgb();
-    return (argb{
-        .b = src.b + dst.b * (1.0 - src.a),
-        .g = src.g + dst.g * (1.0 - src.a),
-        .r = src.r + dst.r * (1.0 - src.a),
-        .a = src.a + dst.a * (1.0 - src.a),
-    }).toArgb8888();
-}
-
-// TODO: add testing based on microsofts float -> srgb specification https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm#FLOATtoSRGB
-
-test "u32 compositing introduces minimal error" {
-    // TODO: use std.testing.fuzz in 0.14
-    var prng = std.Random.DefaultPrng.init(789725665931731016);
-    const ITERATIONS = 1_000;
-    for (0..ITERATIONS) |_| {
-        const dst = argb.fromRGBUnassociatedAlpha(
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-        ).toArgb8888();
-        const src = argb.fromRGBUnassociatedAlpha(
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-        ).toArgb8888();
-
-        const result_using_u12 = compositeSrcOver(dst, src);
-        const result_using_f64 = compositeSrcOverF64(dst, src);
-        try std.testing.expectApproxEqRel(@as(f64, @floatFromInt(@intFromEnum(result_using_f64.b))), @as(f64, @floatFromInt(@intFromEnum(result_using_u12.b))), 0.6);
-        try std.testing.expectApproxEqRel(@as(f64, @floatFromInt(@intFromEnum(result_using_f64.g))), @as(f64, @floatFromInt(@intFromEnum(result_using_u12.g))), 0.6);
-        try std.testing.expectApproxEqRel(@as(f64, @floatFromInt(@intFromEnum(result_using_f64.r))), @as(f64, @floatFromInt(@intFromEnum(result_using_u12.r))), 0.6);
-        try std.testing.expectApproxEqRel(@as(f64, @floatFromInt(result_using_f64.a)), @as(f64, @floatFromInt(result_using_u12.a)), 0.6);
+    pub fn tint(src_encoded: argb8888, mask_encoded: argb8888) argb8888 {
+        // TODO: Research tinting. Should the mask be sRGB encoded or linear?
+        const src: [4]u32 = .{
+            src_encoded.b.decodeU12(),
+            src_encoded.g.decodeU12(),
+            src_encoded.r.decodeU12(),
+            src_encoded.a,
+        };
+        const mask: [4]u32 = .{
+            mask_encoded.b.decodeU12(),
+            mask_encoded.g.decodeU12(),
+            mask_encoded.r.decodeU12(),
+            mask_encoded.a,
+        };
+        return argb8888{
+            .b = sRGB.encodeU12(@truncate((src[0] * mask[0]) >> 12)),
+            .g = sRGB.encodeU12(@truncate((src[1] * mask[1]) >> 12)),
+            .r = sRGB.encodeU12(@truncate((src[2] * mask[2]) >> 12)),
+            .a = @truncate((src[3] * mask[3]) >> 8),
+        };
     }
-}
+
+    pub fn compositeSrcOver(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
+        const dst: [4]u32 = .{
+            dst_encoded.b.decodeU12(),
+            dst_encoded.g.decodeU12(),
+            dst_encoded.r.decodeU12(),
+            dst_encoded.a,
+        };
+        const src: [4]u32 = .{
+            src_encoded.b.decodeU12(),
+            src_encoded.g.decodeU12(),
+            src_encoded.r.decodeU12(),
+            src_encoded.a,
+        };
+        return argb8888{
+            .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src[3])) / 0xFF))),
+            .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src[3])) / 0xFF))),
+            .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src[3])) / 0xFF))),
+            .a = @intCast(src[3] + ((dst[3] * (0xFF - src[3])) / 0xFF)),
+        };
+    }
+
+    test compositeSrcOver {
+        try std.testing.expectEqual(argb8888.TRANSPARENT, compositeSrcOver(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
+        try std.testing.expectEqual(argb8888.WHITE, compositeSrcOver(argb8888.WHITE, argb8888.TRANSPARENT));
+        try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.TRANSPARENT, argb8888.BLACK));
+        try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.WHITE, argb8888.BLACK));
+    }
+
+    pub fn compositeXor(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
+        const dst_alpha_reciprocal: u32 = 0xFF - dst_encoded.a;
+        const src_alpha_reciprocal: u32 = 0xFF - src_encoded.a;
+
+        const dst: [3]u32 = .{
+            dst_encoded.b.decodeU12(),
+            dst_encoded.g.decodeU12(),
+            dst_encoded.r.decodeU12(),
+        };
+        const src: [3]u32 = .{
+            src_encoded.b.decodeU12(),
+            src_encoded.g.decodeU12(),
+            src_encoded.r.decodeU12(),
+        };
+
+        const dst_blend = [3]u12{
+            @intCast((dst[0] * src_alpha_reciprocal) / 0xFF),
+            @intCast((dst[1] * src_alpha_reciprocal) / 0xFF),
+            @intCast((dst[2] * src_alpha_reciprocal) / 0xFF),
+        };
+        const src_blend = [3]u12{
+            @intCast((src[0] * dst_alpha_reciprocal) / 0xFF),
+            @intCast((src[1] * dst_alpha_reciprocal) / 0xFF),
+            @intCast((src[2] * dst_alpha_reciprocal) / 0xFF),
+        };
+
+        return argb8888{
+            .b = sRGB.encodeU12(src_blend[0] + dst_blend[0]),
+            .g = sRGB.encodeU12(src_blend[1] + dst_blend[1]),
+            .r = sRGB.encodeU12(src_blend[2] + dst_blend[2]),
+            .a = @intCast(((src_encoded.a * dst_alpha_reciprocal) / 0xFF) + ((dst_encoded.a * src_alpha_reciprocal) / 0xFF)),
+        };
+    }
+
+    test compositeXor {
+        try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
+        try std.testing.expectEqual(argb8888.WHITE, compositeXor(argb8888.WHITE, argb8888.TRANSPARENT));
+        try std.testing.expectEqual(argb8888.BLACK, compositeXor(argb8888.TRANSPARENT, argb8888.BLACK));
+        try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.WHITE, argb8888.BLACK));
+    }
+
+    // TODO: add testing based on microsofts float -> srgb specification https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm#FLOATtoSRGB
+
+    test "u32 compositing introduces minimal error" {
+        // TODO: use std.testing.fuzz in 0.14
+        var prng = std.Random.DefaultPrng.init(789725665931731016);
+        const ITERATIONS = 1_000;
+        for (0..ITERATIONS) |_| {
+            // convert to argb8888 and back because we aren't interested in how shrinking the
+            // data into 8-bits reduces precision, just if the u12 algorithm introduces any
+            // extra error
+            const dst = argb.fromRGBUnassociatedAlpha(
+                prng.random().float(f64),
+                prng.random().float(f64),
+                prng.random().float(f64),
+                prng.random().float(f64),
+            ).toArgb8888().toArgb();
+            const src = argb.fromRGBUnassociatedAlpha(
+                prng.random().float(f64),
+                prng.random().float(f64),
+                prng.random().float(f64),
+                prng.random().float(f64),
+            ).toArgb8888().toArgb();
+
+            const result_using_u12 = argb8888.compositeSrcOver(dst.toArgb8888(), src.toArgb8888());
+            const result_using_f64 = dst.compositeSrcOver(src).toArgb8888();
+            try std.testing.expectEqual(result_using_f64, result_using_u12);
+        }
+    }
+};
 
 /// sRGB encoding/decoding functions.
 pub const sRGB = enum(u8) {
@@ -336,5 +334,14 @@ pub const sRGB = enum(u8) {
     }
 };
 
+comptime {
+    if (builtin.is_test) {
+        _ = argb;
+        _ = argb8888;
+        _ = sRGB;
+    }
+}
+
+const builtin = @import("builtin");
 const probes = @import("probes");
 const std = @import("std");

@@ -84,10 +84,7 @@ pub fn composite(dst: @This(), src: @This()) void {
         const dst_row = dst.pixels[y * dst.stride ..][0..dst.size[0]];
         const src_row = src.pixels[y * src.stride ..][0..src.size[0]];
         for (dst_row, src_row) |*dst_argb, src_argb| {
-            dst_argb.* = seizer.color.compositeSrcOver(
-                dst_argb.*,
-                src_argb,
-            );
+            dst_argb.* = dst_argb.*.compositeSrcOver(src_argb);
         }
     }
 }
@@ -108,7 +105,7 @@ pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: seizer.color.arg
         const start_of_row: u32 = @intCast(row * this.stride);
         const row_buffer = this.pixels[start_of_row..][min[0]..max[0]];
         for (row_buffer) |*pixel| {
-            pixel.* = seizer.color.compositeSrcOver(pixel.*, color);
+            pixel.* = pixel.*.compositeSrcOver(color);
         }
     }
 }

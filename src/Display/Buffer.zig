@@ -107,11 +107,8 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
                 @intFromFloat(texture_coord[0]),
                 @intFromFloat(texture_coord[1]),
             });
-            const src_pixel_tint = seizer.color.tint(src_pixel, color_mask);
-            this.image().setPixel(.{ @intCast(x), @intCast(y) }, seizer.color.compositeSrcOver(
-                dst_pixel,
-                src_pixel_tint,
-            ));
+            const src_pixel_tint = src_pixel.tint(color_mask);
+            this.image().setPixel(.{ @intCast(x), @intCast(y) }, dst_pixel.compositeSrcOver(src_pixel_tint));
         }
     }
 }

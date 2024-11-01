@@ -6,8 +6,8 @@ pub fn main() !void {
     try bench.add("sRGB roundtrip f64 naive", sRGB_roundtrip_naive_f64, .{});
     try bench.add("sRGB roundtrip f32 naive", sRGB_roundtrip_naive_f32, .{});
     try bench.add("sRGB roundtrip u12", sRGB_roundtrip_u12, .{});
+    try bench.add("argb compositeSrcOver", argb_compositeSrcOver, .{});
     try bench.add("argb8888 compositeSrcOver", argb8888_compositeSrcOver, .{});
-    try bench.add("argb8888 f64 compositeSrcOver", argb8888_compositeSrcOverF64, .{});
     try bench.add("argb8888 compositeXor", argb8888_compositeXor, .{});
 
     try stdout.writeAll("\n");
@@ -43,6 +43,26 @@ fn sRGB_roundtrip_u12(_: std.mem.Allocator) void {
     }
 }
 
+fn argb_compositeSrcOver(_: std.mem.Allocator) void {
+    const NUM_SAMPLES = 128;
+    for (0..NUM_SAMPLES) |i| {
+        const src = seizer.color.argb{
+            .b = @as(f64, @floatFromInt(i)) / NUM_SAMPLES,
+            .g = @as(f64, @floatFromInt(i)) / NUM_SAMPLES,
+            .r = @as(f64, @floatFromInt(i)) / NUM_SAMPLES,
+            .a = @floatFromInt(i),
+        };
+        const dst = seizer.color.argb{
+            .b = @as(f64, @floatFromInt(i + 1)) / (NUM_SAMPLES + 1),
+            .g = @as(f64, @floatFromInt(i + 1)) / (NUM_SAMPLES + 1),
+            .r = @as(f64, @floatFromInt(i + 1)) / (NUM_SAMPLES + 1),
+            .a = @floatFromInt(i + 1),
+        };
+        const blended = seizer.color.argb.compositeSrcOver(dst, src);
+        std.mem.doNotOptimizeAway(blended);
+    }
+}
+
 fn argb8888_compositeSrcOver(_: std.mem.Allocator) void {
     const NUM_SAMPLES = 128;
     for (0..NUM_SAMPLES) |i| {
@@ -58,27 +78,7 @@ fn argb8888_compositeSrcOver(_: std.mem.Allocator) void {
             .r = @enumFromInt(@as(u8, @truncate(i + 1))),
             .a = @truncate(i + 1),
         };
-        const blended = seizer.color.compositeSrcOver(dst, src);
-        std.mem.doNotOptimizeAway(blended);
-    }
-}
-
-fn argb8888_compositeSrcOverF64(_: std.mem.Allocator) void {
-    const NUM_SAMPLES = 128;
-    for (0..NUM_SAMPLES) |i| {
-        const src = seizer.color.argb8888{
-            .b = @enumFromInt(@as(u8, @truncate(i))),
-            .g = @enumFromInt(@as(u8, @truncate(i))),
-            .r = @enumFromInt(@as(u8, @truncate(i))),
-            .a = @truncate(i),
-        };
-        const dst = seizer.color.argb8888{
-            .b = @enumFromInt(@as(u8, @truncate(i + 1))),
-            .g = @enumFromInt(@as(u8, @truncate(i + 1))),
-            .r = @enumFromInt(@as(u8, @truncate(i + 1))),
-            .a = @truncate(i + 1),
-        };
-        const blended = seizer.color.compositeSrcOverF64(dst, src);
+        const blended = seizer.color.argb8888.compositeSrcOver(dst, src);
         std.mem.doNotOptimizeAway(blended);
     }
 }
@@ -98,7 +98,7 @@ fn argb8888_compositeXor(_: std.mem.Allocator) void {
             .r = @enumFromInt(@as(u8, @truncate(i + 1))),
             .a = @truncate(i + 1),
         };
-        const blended = seizer.color.compositeXor(dst, src);
+        const blended = seizer.color.argb8888.compositeXor(dst, src);
         std.mem.doNotOptimizeAway(blended);
     }
 }
