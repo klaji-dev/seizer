@@ -9,8 +9,6 @@ const Example = enum {
     sprite_batch,
     bicubic_filter,
     tinyvg,
-    gamepad,
-    clicker,
     ui_stage,
     multi_window,
     file_browser,
