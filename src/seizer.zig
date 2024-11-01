@@ -12,7 +12,6 @@ pub const Image = @import("./Image.zig");
 // re-exported libraries
 pub const tvg = @import("tvg");
 pub const xev = @import("xev");
-pub const zigimg = @import("zigimg");
 
 /// Seizer version
 pub const version = std.SemanticVersion{
