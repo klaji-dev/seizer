@@ -69,6 +69,15 @@ pub const argb = extern struct {
             .a = src.a + dst.a * (1.0 - src.a),
         };
     }
+
+    pub fn compositeXor(dst: argb, src: argb) argb {
+        return .{
+            .b = src.b * (1.0 - dst.a) + dst.b * (1.0 - src.a),
+            .g = src.g * (1.0 - dst.a) + dst.g * (1.0 - src.a),
+            .r = src.r * (1.0 - dst.a) + dst.r * (1.0 - src.a),
+            .a = src.a * (1.0 - dst.a) + dst.a * (1.0 - src.a),
+        };
+    }
 };
 
 /// 3 8-bit sRGB encoded colors premultiplied with an linear 8-bit alpha component.
@@ -133,23 +142,21 @@ pub const argb8888 = packed struct(u32) {
     }
 
     pub fn compositeSrcOver(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
-        const dst: [4]u32 = .{
+        const dst: [3]u32 = .{
             dst_encoded.b.decodeU12(),
             dst_encoded.g.decodeU12(),
             dst_encoded.r.decodeU12(),
-            dst_encoded.a,
         };
-        const src: [4]u32 = .{
+        const src: [3]u32 = .{
             src_encoded.b.decodeU12(),
             src_encoded.g.decodeU12(),
             src_encoded.r.decodeU12(),
-            src_encoded.a,
         };
         return argb8888{
-            .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src[3])) / 0xFF))),
-            .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src[3])) / 0xFF))),
-            .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src[3])) / 0xFF))),
-            .a = @intCast(src[3] + ((dst[3] * (0xFF - src[3])) / 0xFF)),
+            .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src_encoded.a)) / 0xFF))),
+            .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src_encoded.a)) / 0xFF))),
+            .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src_encoded.a)) / 0xFF))),
+            .a = @truncate(@as(u16, src_encoded.a) + ((@as(u16, dst_encoded.a) * (0xFF - src_encoded.a)) / 0xFF)),
         };
     }
 
@@ -175,22 +182,22 @@ pub const argb8888 = packed struct(u32) {
             src_encoded.r.decodeU12(),
         };
 
-        const dst_blend = [3]u12{
-            @intCast((dst[0] * src_alpha_reciprocal) / 0xFF),
-            @intCast((dst[1] * src_alpha_reciprocal) / 0xFF),
-            @intCast((dst[2] * src_alpha_reciprocal) / 0xFF),
+        const dst_blend = [3]u32{
+            dst[0] * src_alpha_reciprocal,
+            dst[1] * src_alpha_reciprocal,
+            dst[2] * src_alpha_reciprocal,
         };
-        const src_blend = [3]u12{
-            @intCast((src[0] * dst_alpha_reciprocal) / 0xFF),
-            @intCast((src[1] * dst_alpha_reciprocal) / 0xFF),
-            @intCast((src[2] * dst_alpha_reciprocal) / 0xFF),
+        const src_blend = [3]u32{
+            src[0] * dst_alpha_reciprocal,
+            src[1] * dst_alpha_reciprocal,
+            src[2] * dst_alpha_reciprocal,
         };
 
         return argb8888{
-            .b = sRGB.encodeU12(src_blend[0] + dst_blend[0]),
-            .g = sRGB.encodeU12(src_blend[1] + dst_blend[1]),
-            .r = sRGB.encodeU12(src_blend[2] + dst_blend[2]),
-            .a = @intCast(((src_encoded.a * dst_alpha_reciprocal) / 0xFF) + ((dst_encoded.a * src_alpha_reciprocal) / 0xFF)),
+            .b = sRGB.encodeU12(@truncate((src_blend[0] + dst_blend[0]) / 0xFF)),
+            .g = sRGB.encodeU12(@truncate((src_blend[1] + dst_blend[1]) / 0xFF)),
+            .r = sRGB.encodeU12(@truncate((src_blend[2] + dst_blend[2]) / 0xFF)),
+            .a = @truncate(((src_encoded.a * dst_alpha_reciprocal) + (dst_encoded.a * src_alpha_reciprocal)) / 0xFF),
         };
     }
 
