@@ -273,6 +273,252 @@ pub fn Image(Pixel: type) type {
     };
 }
 
+pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
+    std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
+    return struct {
+        tiles: [*]Tile,
+        /// The size of the Tiled image, in pixels.
+        size_px: [2]u32,
+        /// The offset into the Tiled image this slice starts at
+        start_px: [2]u32,
+        /// The offset into the Tiled image this slice ends at. Must be > start_px
+        end_px: [2]u32,
+
+        pub const Tile = [tile_size[1]][tile_size[0]]Pixel;
+
+        pub fn alloc(allocator: std.mem.Allocator, size_px: [2]u32) !@This() {
+            const size_in_tiles = [2]u32{
+                size_px[0] / tile_size[0],
+                size_px[1] / tile_size[1],
+            };
+
+            const tiles = try allocator.alloc(Tile, size_in_tiles[0] * size_in_tiles[1]);
+            errdefer allocator.free(tiles);
+
+            return .{
+                .tiles = tiles.ptr,
+                .size_px = size_px,
+                .start_px = .{ 0, 0 },
+                .end_px = size_px,
+            };
+        }
+
+        pub fn free(this: @This(), allocator: std.mem.Allocator) void {
+            const size_in_tiles = [2]u32{
+                this.size_px[0] / tile_size[0],
+                this.size_px[1] / tile_size[1],
+            };
+
+            allocator.free(this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]);
+        }
+
+        pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) @This() {
+            const new_start = [2]u32{
+                this.start_px[0] + offset[0],
+                this.start_px[1] + offset[1],
+            };
+            const new_end = [2]u32{
+                new_start[0] + size[0],
+                new_start[1] + size[1],
+            };
+            std.debug.assert(new_start[0] <= this.size_px[0] and new_start[1] <= this.size_px[1]);
+            std.debug.assert(new_end[0] <= this.size_px[0] and new_end[1] <= this.size_px[1]);
+
+            return .{
+                .tiles = this.tiles,
+                .size_px = this.size_px,
+                .start_px = new_start,
+                .end_px = new_end,
+            };
+        }
+
+        pub fn composite(dst: @This(), src: Image(Pixel)) void {
+            const dst_size = [2]u32{
+                dst.end_px[0] - dst.start_px[0],
+                dst.end_px[1] - dst.start_px[1],
+            };
+            std.debug.assert(dst_size[0] == src.size[0] and dst_size[1] == src.size[1]);
+
+            const min_tile_pos = [2]u32{
+                dst.start_px[0] / tile_size[0],
+                dst.start_px[1] / tile_size[1],
+            };
+            const max_tile_pos = [2]u32{
+                dst.end_px[0] / tile_size[0],
+                dst.end_px[1] / tile_size[1],
+            };
+
+            const size_in_tiles = [2]u32{
+                dst.size_px[0] / tile_size[0],
+                dst.size_px[1] / tile_size[1],
+            };
+
+            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
+                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
+                    const tile_index = tile_y * size_in_tiles[0] + tile_x;
+                    const tile = &dst.tiles[tile_index];
+
+                    const tile_pos_in_px = [2]u32{
+                        @intCast(tile_x * tile_size[0]),
+                        @intCast(tile_y * tile_size[1]),
+                    };
+
+                    const min_in_tile = [2]u32{
+                        dst.start_px[0] -| tile_pos_in_px[0],
+                        dst.start_px[1] -| tile_pos_in_px[1],
+                    };
+                    const max_in_tile = [2]u32{
+                        (dst.end_px[0] -| tile_pos_in_px[0]) % tile_size[0],
+                        (dst.end_px[1] -| tile_pos_in_px[1]) % tile_size[1],
+                    };
+
+                    for (min_in_tile[1]..max_in_tile[1]) |y| {
+                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                            const src_pos: [2]i32 = .{
+                                @intCast(tile_pos_in_px[0] + x - dst.start_px[0]),
+                                @intCast(tile_pos_in_px[1] + y - dst.start_px[1]),
+                            };
+                            tile[y][x] = Pixel.compositeSrcOver(tile[y][x], src.getPixel(src_pos));
+                        }
+                    }
+                }
+            }
+        }
+
+        pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
+            const this_size = [2]u32{
+                this.end_px[0] - this.start_px[0],
+                this.end_px[1] - this.start_px[1],
+            };
+
+            const size_i = [2]i32{ @intCast(this_size[0]), @intCast(this_size[1]) };
+            const min_offset = [2]u32{
+                @intCast(std.math.clamp(@min(a[0], b[0]), 0, size_i[0])),
+                @intCast(std.math.clamp(@min(a[1], b[1]), 0, size_i[1])),
+            };
+            const max_offset = [2]u32{
+                @intCast(std.math.clamp(@max(a[0], b[0]), 0, size_i[0])),
+                @intCast(std.math.clamp(@max(a[1], b[1]), 0, size_i[1])),
+            };
+
+            const min_tile_pos = this.tilePosFromOffset(min_offset);
+            const max_tile_pos = this.tilePosFromOffset(max_offset);
+
+            const size_in_tiles = [2]u32{
+                this.size_px[0] / tile_size[0],
+                this.size_px[1] / tile_size[1],
+            };
+
+            for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
+                for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0]) |tile_x| {
+                    const tile_index = tile_y * size_in_tiles + tile_x;
+                    const tile = &this.tiles[tile_index];
+
+                    const tile_pos_in_px = [2]u32{
+                        tile_x * tile_size[0],
+                        tile_y * tile_size[1],
+                    };
+
+                    const min_in_tile = [2]u32{
+                        min_offset[0] -| tile_pos_in_px[0],
+                        min_offset[1] -| tile_pos_in_px[1],
+                    };
+                    const max_in_tile = [2]u32{
+                        (max_tile_pos[0] -| max_offset[0]) % tile_size[0],
+                        (max_tile_pos[1] -| max_offset[1]) % tile_size[1],
+                    };
+
+                    for (min_in_tile[1]..max_in_tile[1]) |y| {
+                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                            tile[y][x] = Pixel.compositeSrcOver(tile[y][x], color);
+                        }
+                    }
+                }
+            }
+        }
+
+        pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
+            const delta = [2]i32{
+                @intCast(@abs(b[0] - a[0])),
+                -@as(i32, @intCast(@abs(b[1] - a[1]))),
+            };
+            const sign = [2]i32{
+                std.math.sign(b[0] - a[0]),
+                std.math.sign(b[1] - a[1]),
+            };
+
+            var err = delta[0] + delta[1];
+            var pos = a;
+            while (true) {
+                this.setPixel(pos, Pixel.compositeSrcOver(this.getPixel(pos), color));
+                if (pos[0] == b[0] and pos[1] == b[1]) break;
+                const err2 = 2 * err;
+                if (err2 >= delta[1]) {
+                    err += delta[1];
+                    pos[0] += sign[0];
+                }
+                if (err2 <= delta[0]) {
+                    err += delta[0];
+                    pos[1] += sign[1];
+                }
+            }
+        }
+
+        pub fn setPixel(this: @This(), offset: [2]i32, color: Pixel) void {
+            const tile_pos = this.tilePosFromOffset(offset);
+
+            const tile = &this.tiles[tile_pos.index];
+
+            tile[tile_pos.pos_in_tile[1]][tile_pos.pos_in_tile[0]] = color;
+        }
+
+        pub fn getPixel(this: @This(), offset: [2]i32) Pixel {
+            const tile_pos = this.tilePosFromOffset(offset);
+
+            const tile = &this.tiles[tile_pos.index];
+
+            return tile[tile_pos.pos_in_tile[1]][tile_pos.pos_in_tile[0]];
+        }
+
+        const TilePos = struct {
+            tile_pos: [2]u32,
+            index: u32,
+            pos_in_tile: [2]u8,
+        };
+
+        fn tilePosFromOffset(this: @This(), offset: [2]u32) TilePos {
+            std.debug.assert(offset[0] >= 0 and offset[1] >= 0);
+            std.debug.assert(offset[0] < this.end_px[0] - this.start_px[0] and offset[1] < this.end_px[1] - this.start_px[1]);
+            const pos = [2]u32{
+                @intCast(this.start_px[0] + offset[0]),
+                @intCast(this.start_px[1] + offset[1]),
+            };
+
+            const tile_pos = [2]u32{
+                pos[0] / tile_size[0],
+                pos[1] / tile_size[1],
+            };
+            const size_in_tiles = [2]u32{
+                this.size_px[0] / tile_size[0],
+                this.size_px[1] / tile_size[1],
+            };
+
+            const tile_index = tile_pos[1] * size_in_tiles + tile_pos[0];
+
+            const pos_in_tile = [2]u32{
+                pos[0] % tile_size[0],
+                pos[1] % tile_size[1],
+            };
+
+            return TilePos{
+                .tile_pos = tile_pos,
+                .index = tile_index,
+                .pos_in_tile = pos_in_tile,
+            };
+        }
+    };
+}
+
 const probes = @import("probes");
 const std = @import("std");
 const seizer = @import("./seizer.zig");

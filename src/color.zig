@@ -77,7 +77,7 @@ pub fn argb(F: type) type {
             };
         }
 
-        pub fn compositeSrcOver(dst: argb, src: argb) argb {
+        pub fn compositeSrcOver(dst: @This(), src: @This()) @This() {
             return .{
                 .b = src.b + dst.b * (1.0 - src.a),
                 .g = src.g + dst.g * (1.0 - src.a),
@@ -86,7 +86,7 @@ pub fn argb(F: type) type {
             };
         }
 
-        pub fn compositeXor(dst: argb, src: argb) argb {
+        pub fn compositeXor(dst: @This(), src: @This()) @This() {
             return .{
                 .b = src.b * (1.0 - dst.a) + dst.b * (1.0 - src.a),
                 .g = src.g * (1.0 - dst.a) + dst.g * (1.0 - src.a),

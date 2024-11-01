@@ -5,6 +5,7 @@ var sample_64x64_image: ImageArgb8888 = undefined;
 var sample_640x480_image: ImageArgb8888 = undefined;
 var sample_1280x960_image: ImageArgb8888 = undefined;
 
+var sample_16x16_image_f32: ImageArgbF32 = undefined;
 var sample_64x64_image_f32: ImageArgbF32 = undefined;
 var sample_640x480_image_f32: ImageArgbF32 = undefined;
 var sample_1280x960_image_f32: ImageArgbF32 = undefined;
@@ -47,6 +48,17 @@ pub fn main() !void {
     }
 
     // init argb4xf32 image samples
+    sample_16x16_image_f32 = try ImageArgbF32.alloc(gpa.allocator(), .{ 16, 16 });
+    defer sample_16x16_image_f32.free(gpa.allocator());
+    for (sample_16x16_image_f32.pixels[0 .. sample_16x16_image_f32.size[0] * sample_16x16_image_f32.size[1]]) |*pixel| {
+        pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+    }
+
     sample_64x64_image_f32 = try ImageArgbF32.alloc(gpa.allocator(), .{ 64, 64 });
     defer sample_64x64_image_f32.free(gpa.allocator());
     for (sample_64x64_image_f32.pixels[0 .. sample_64x64_image_f32.size[0] * sample_64x64_image_f32.size[1]]) |*pixel| {
@@ -91,7 +103,10 @@ pub fn main() !void {
     try bench.add("composite 1280x960 to 1280x960", composite_1280x960_to_1280x960, .{});
     try bench.add("composite 4096 64x64 to 640x480", composite_4096_64x64_to_640x480, .{});
     try bench.add("composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960, .{});
-    try bench.add("f32 composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960, .{});
+    try bench.add("f32 composite 4096 16x16 to 1280x960", composite_4096_16x16_to_1280x960_f32, .{});
+    try bench.add("f32 composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960_f32, .{});
+    try bench.add("f32 16x16 tiled composite 4096 16x16 to 1280x960", composite_4096_16x16_to_1280x960_tiled_f32, .{});
+    try bench.add("f32 64x64 tiled composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960_tiled_f32, .{});
 
     try stdout.writeAll("\n");
     try bench.run(stdout);
@@ -180,6 +195,22 @@ fn composite_4096_64x64_to_1280x960(allocator: std.mem.Allocator) void {
     }
 }
 
+fn composite_4096_16x16_to_1280x960_f32(allocator: std.mem.Allocator) void {
+    const framebuffer = ImageArgbF32.alloc(allocator, .{ 1280, 960 }) catch unreachable;
+    defer framebuffer.free(allocator);
+
+    for (0..4096) |_| {
+        const pos = [2]u32{
+            prng.random().uintAtMostBiased(u32, framebuffer.size[0] - sample_16x16_image_f32.size[0]),
+            prng.random().uintAtMostBiased(u32, framebuffer.size[1] - sample_16x16_image_f32.size[1]),
+        };
+
+        framebuffer.slice(pos, sample_16x16_image_f32.size).composite(sample_16x16_image_f32);
+
+        std.mem.doNotOptimizeAway(framebuffer.pixels);
+    }
+}
+
 fn composite_4096_64x64_to_1280x960_f32(allocator: std.mem.Allocator) void {
     const framebuffer = ImageArgbF32.alloc(allocator, .{ 1280, 960 }) catch unreachable;
     defer framebuffer.free(allocator);
@@ -193,6 +224,38 @@ fn composite_4096_64x64_to_1280x960_f32(allocator: std.mem.Allocator) void {
         framebuffer.slice(pos, sample_64x64_image_f32.size).composite(sample_64x64_image_f32);
 
         std.mem.doNotOptimizeAway(framebuffer.pixels);
+    }
+}
+
+fn composite_4096_16x16_to_1280x960_tiled_f32(allocator: std.mem.Allocator) void {
+    const framebuffer = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(allocator, .{ 1280, 960 }) catch unreachable;
+    defer framebuffer.free(allocator);
+
+    for (0..4096) |_| {
+        const pos = [2]u32{
+            prng.random().uintAtMostBiased(u32, framebuffer.size_px[0] - sample_16x16_image_f32.size[0]),
+            prng.random().uintAtMostBiased(u32, framebuffer.size_px[1] - sample_16x16_image_f32.size[1]),
+        };
+
+        framebuffer.slice(pos, sample_16x16_image_f32.size).composite(sample_16x16_image_f32);
+
+        std.mem.doNotOptimizeAway(framebuffer.tiles);
+    }
+}
+
+fn composite_4096_64x64_to_1280x960_tiled_f32(allocator: std.mem.Allocator) void {
+    const framebuffer = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(allocator, .{ 1280, 960 }) catch unreachable;
+    defer framebuffer.free(allocator);
+
+    for (0..4096) |_| {
+        const pos = [2]u32{
+            prng.random().uintAtMostBiased(u32, framebuffer.size_px[0] - sample_64x64_image_f32.size[0]),
+            prng.random().uintAtMostBiased(u32, framebuffer.size_px[1] - sample_64x64_image_f32.size[1]),
+        };
+
+        framebuffer.slice(pos, sample_64x64_image_f32.size).composite(sample_64x64_image_f32);
+
+        std.mem.doNotOptimizeAway(framebuffer.tiles);
     }
 }
 
