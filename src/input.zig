@@ -10,11 +10,11 @@ pub const Event = union(enum) {
     key: Key,
 
     pub const Hover = struct {
-        pos: [2]f32,
+        pos: [2]f64,
         modifiers: mouse.Modifiers,
 
-        pub fn transform(hover: Hover, transform_matrix: [4][4]f32) Hover {
-            const transformed_pos = seizer.geometry.mat4.mulVec(f32, transform_matrix, .{
+        pub fn transform(hover: Hover, transform_matrix: [4][4]f64) Hover {
+            const transformed_pos = seizer.geometry.mat4.mulVec(f64, transform_matrix, .{
                 hover.pos[0],
                 hover.pos[1],
                 0,
@@ -25,12 +25,12 @@ pub const Event = union(enum) {
     };
 
     pub const Click = struct {
-        pos: [2]f32,
+        pos: [2]f64,
         button: mouse.Button,
         pressed: bool,
 
-        pub fn transform(click: Click, transform_matrix: [4][4]f32) Click {
-            const transformed_pos = seizer.geometry.mat4.mulVec(f32, transform_matrix, .{
+        pub fn transform(click: Click, transform_matrix: [4][4]f64) Click {
+            const transformed_pos = seizer.geometry.mat4.mulVec(f64, transform_matrix, .{
                 click.pos[0],
                 click.pos[1],
                 0,
@@ -45,7 +45,7 @@ pub const Event = union(enum) {
     };
 
     pub const Scroll = struct {
-        offset: [2]f32,
+        offset: [2]f64,
     };
 
     pub const Text = struct {
@@ -59,7 +59,7 @@ pub const Event = union(enum) {
         mods: keyboard.Modifiers,
     };
 
-    pub fn transform(this: Event, matrix: [4][4]f32) Event {
+    pub fn transform(this: Event, matrix: [4][4]f64) Event {
         return switch (this) {
             .hover => |hover| .{ .hover = hover.transform(matrix) },
             .click => |click| .{ .click = click.transform(matrix) },

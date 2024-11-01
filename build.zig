@@ -9,7 +9,7 @@ const Example = enum {
     sprite_batch,
     bicubic_filter,
     // tinyvg,
-    // ui_stage,
+    ui_stage,
     // multi_window,
     // file_browser,
     // ui_view_image,

@@ -1,6 +1,6 @@
 pub fn evdevToSeizer(scancode: u32) seizer.input.keyboard.Scancode {
     std.debug.assert(scancode < std.math.maxInt(u16));
-    const evdev_key: seizer.Platform.linuxbsd.EvDev.KEY = @enumFromInt(@as(u16, @intCast(scancode)));
+    const evdev_key: evdev.KEY = @enumFromInt(@as(u16, @intCast(scancode)));
     return switch (evdev_key) {
         .esc => .escape,
         .@"1" => .@"1",
@@ -117,5 +117,6 @@ pub fn evdevToSeizer(scancode: u32) seizer.input.keyboard.Scancode {
     };
 }
 
-const seizer = @import("./../../seizer.zig");
+const evdev = @import("./evdev.zig");
+const seizer = @import("../seizer.zig");
 const std = @import("std");

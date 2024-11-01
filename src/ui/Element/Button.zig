@@ -10,21 +10,21 @@ clicked_style: Style,
 
 on_click: ?ui.Callable(fn (*@This()) void) = null,
 
-const RECT_COLOR_DEFAULT = [4]u8{ 0x30, 0x30, 0x30, 0xFF };
-const RECT_COLOR_HOVERED = [4]u8{ 0x50, 0x50, 0x50, 0xFF };
-const RECT_COLOR_CLICKED = [4]u8{ 0x70, 0x70, 0x70, 0xFF };
+const RECT_COLOR_DEFAULT = [4]f64{ 0x30.0 / 0xFF.0, 0x30.0 / 0xFF.0, 0x30.0 / 0xFF.0, 1 };
+const RECT_COLOR_HOVERED = [4]f64{ 0x50.0 / 0xFF.0, 0x50.0 / 0xFF.0, 0x50.0 / 0xFF.0, 1 };
+const RECT_COLOR_CLICKED = [4]f64{ 0x70.0 / 0xFF.0, 0x70.0 / 0xFF.0, 0x70.0 / 0xFF.0, 1 };
 
-const TEXT_COLOR_DEFAULT = [4]u8{ 0xFF, 0xFF, 0xFF, 0xFF };
-const TEXT_COLOR_HOVERED = [4]u8{ 0xFF, 0xFF, 0x80, 0xFF };
-const TEXT_COLOR_CLICKED = [4]u8{ 0xFF, 0xFF, 0x00, 0xFF };
+const TEXT_COLOR_DEFAULT = [4]f64{ 1, 1, 1, 1 };
+const TEXT_COLOR_HOVERED = [4]f64{ 1, 1, 0.5, 1 };
+const TEXT_COLOR_CLICKED = [4]f64{ 1, 1, 0, 1 };
 
 pub const Style = struct {
-    padding: seizer.geometry.Inset(f32),
+    padding: seizer.geometry.Inset(f64),
     text_font: *const seizer.Canvas.Font,
-    text_scale: f32,
-    text_color: [4]u8,
-    background_ninepatch: ?seizer.NinePatch = null,
-    background_color: [4]u8,
+    text_scale: f64,
+    text_color: [4]f64,
+    background_ninepatch: ?seizer.Canvas.NinePatch = null,
+    background_color: [4]f64,
 };
 
 pub fn create(stage: *ui.Stage, text: []const u8) !*@This() {
@@ -156,7 +156,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-pub fn getMinSize(this: *@This()) [2]f32 {
+pub fn getMinSize(this: *@This()) [2]f64 {
     const is_pressed = if (this.stage.pointer_capture_element) |pce| pce.ptr == this.element().ptr else false;
     const is_hovered = if (this.stage.hovered_element) |hovered| hovered.ptr == this.element().ptr else false;
     const style = if (is_pressed) this.clicked_style else if (is_hovered) this.hovered_style else this.default_style;
@@ -168,18 +168,17 @@ pub fn getMinSize(this: *@This()) [2]f32 {
     };
 }
 
-fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
+fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
     const is_pressed = if (this.stage.pointer_capture_element) |pce| pce.ptr == this.element().ptr else false;
     const is_hovered = if (this.stage.hovered_element) |hovered| hovered.ptr == this.element().ptr else false;
     const style = if (is_pressed) this.clicked_style else if (is_hovered) this.hovered_style else this.default_style;
 
     if (style.background_ninepatch) |ninepatch| {
-        ninepatch.draw(canvas, rect, .{
-            .scale = 1,
+        canvas.ninePatch(rect.pos, rect.size, ninepatch.image, ninepatch.inset, .{
             .color = style.background_color,
         });
     } else {
-        canvas.rect(rect.pos, rect.size, .{
+        canvas.fillRect(rect.pos, rect.size, .{
             .color = style.background_color,
         });
     }
@@ -196,6 +195,6 @@ fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f32);
+const Rect = seizer.geometry.Rect(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

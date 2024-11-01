@@ -14,12 +14,12 @@ const Element = @This();
 
 pub const TransformedRect = struct {
     rect: Rect,
-    transform: [4][4]f32,
+    transform: [4][4]f64,
 
-    pub fn transformWithTranslation(this: @This()) [4][4]f32 {
+    pub fn transformWithTranslation(this: @This()) [4][4]f64 {
         return seizer.geometry.mat4.mul(
-            f32,
-            seizer.geometry.mat4.translate(f32, .{ -this.rect.pos[0], -this.rect.pos[1], 0 }),
+            f64,
+            seizer.geometry.mat4.translate(f64, .{ -this.rect.pos[0], -this.rect.pos[1], 0 }),
             this.transform,
         );
     }
@@ -33,9 +33,9 @@ pub const Interface = struct {
     get_child_rect_fn: *const fn (Element, child: Element) ?TransformedRect = getChildRectDefault,
 
     process_event_fn: *const fn (Element, event: seizer.input.Event) ?Element,
-    get_min_size_fn: *const fn (Element) [2]f32,
-    layout_fn: *const fn (Element, min_size: [2]f32, max_size: [2]f32) [2]f32 = layoutDefault,
-    render_fn: *const fn (Element, Canvas.Transformed, Rect) void,
+    get_min_size_fn: *const fn (Element) [2]f64,
+    layout_fn: *const fn (Element, min_size: [2]f64, max_size: [2]f64) [2]f64 = layoutDefault,
+    render_fn: *const fn (Element, Canvas, Rect) void,
 
     pub fn getTypeErasedFunctions(comptime T: type, typed_fns: struct {
         acquire_fn: *const fn (*T) void,
@@ -45,9 +45,9 @@ pub const Interface = struct {
         get_child_rect_fn: ?*const fn (*T, child: Element) ?TransformedRect = null,
 
         process_event_fn: *const fn (*T, event: seizer.input.Event) ?Element,
-        get_min_size_fn: *const fn (*T) [2]f32,
-        layout_fn: ?*const fn (*T, min_size: [2]f32, max_size: [2]f32) [2]f32 = null,
-        render_fn: *const fn (*T, Canvas.Transformed, Rect) void,
+        get_min_size_fn: *const fn (*T) [2]f64,
+        layout_fn: ?*const fn (*T, min_size: [2]f64, max_size: [2]f64) [2]f64 = null,
+        render_fn: *const fn (*T, Canvas, Rect) void,
     }) Interface {
         const type_erased_fns = struct {
             fn acquire(element: Element) void {
@@ -78,11 +78,11 @@ pub const Interface = struct {
                 const t: *T = @ptrCast(@alignCast(element.ptr));
                 return typed_fns.process_event_fn(t, event);
             }
-            fn getMinSize(element: Element) [2]f32 {
+            fn getMinSize(element: Element) [2]f64 {
                 const t: *T = @ptrCast(@alignCast(element.ptr));
                 return typed_fns.get_min_size_fn(t);
             }
-            fn layout(element: Element, min_size: [2]f32, max_size: [2]f32) [2]f32 {
+            fn layout(element: Element, min_size: [2]f64, max_size: [2]f64) [2]f64 {
                 const t: *T = @ptrCast(@alignCast(element.ptr));
                 if (typed_fns.layout_fn) |layout_fn| {
                     return layout_fn(t, min_size, max_size);
@@ -90,7 +90,7 @@ pub const Interface = struct {
                     return element.layoutDefault(min_size, max_size);
                 }
             }
-            fn render(element: Element, canvas: Canvas.Transformed, rect: Rect) void {
+            fn render(element: Element, canvas: Canvas, rect: Rect) void {
                 const t: *T = @ptrCast(@alignCast(element.ptr));
                 return typed_fns.render_fn(t, canvas, rect);
             }
@@ -140,22 +140,22 @@ pub fn processEvent(element: Element, event: seizer.input.Event) ?Element {
 }
 
 // layouting functions
-pub fn getMinSize(element: Element) [2]f32 {
+pub fn getMinSize(element: Element) [2]f64 {
     return element.interface.get_min_size_fn(element);
 }
 
-pub fn layout(element: Element, min_size: [2]f32, max_size: [2]f32) [2]f32 {
+pub fn layout(element: Element, min_size: [2]f64, max_size: [2]f64) [2]f64 {
     return element.interface.layout_fn(element, min_size, max_size);
 }
 
 // rendering
-pub fn render(element: Element, canvas: Canvas.Transformed, rect: Rect) void {
+pub fn render(element: Element, canvas: Canvas, rect: Rect) void {
     return element.interface.render_fn(element, canvas, rect);
 }
 
 // Default functions
 
-pub fn layoutDefault(element: Element, min_size: [2]f32, max_size: [2]f32) [2]f32 {
+pub fn layoutDefault(element: Element, min_size: [2]f64, max_size: [2]f64) [2]f64 {
     _ = min_size;
     _ = max_size;
     return element.getMinSize();

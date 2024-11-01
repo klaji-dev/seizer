@@ -67,7 +67,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-fn getMinSize(this: *@This()) [2]f32 {
+fn getMinSize(this: *@This()) [2]f64 {
     const text_size = this.style.text_font.textSize(this.text.items, this.style.text_scale);
     return .{
         text_size[0] + this.style.padding.size()[0],
@@ -75,9 +75,8 @@ fn getMinSize(this: *@This()) [2]f32 {
     };
 }
 
-fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
-    this.style.background_image.draw(canvas, rect, .{
-        .scale = 1,
+fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
+    canvas.ninePatch(rect.pos, rect.size, this.style.background_image.image, this.style.background_image.inset, .{
         .color = this.style.background_color,
     });
 
@@ -93,6 +92,6 @@ fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f32);
+const Rect = seizer.geometry.Rect(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

@@ -102,7 +102,7 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
     }
     return .{
         .rect = child_rect,
-        .transform = seizer.geometry.mat4.identity(f32),
+        .transform = seizer.geometry.mat4.identity(f64),
     };
 }
 
@@ -111,7 +111,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
         .hover => |hover| {
             for (this.children.keys(), this.children.values()) |child_element, child_rect| {
                 if (child_rect.contains(hover.pos)) {
-                    const child_event = event.transform(seizer.geometry.mat4.translate(f32, .{
+                    const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
                         -child_rect.pos[0],
                         -child_rect.pos[1],
                         0,
@@ -126,7 +126,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
         .click => |click| {
             for (this.children.keys(), this.children.values()) |child_element, child_rect| {
                 if (child_rect.contains(click.pos)) {
-                    const child_event = event.transform(seizer.geometry.mat4.translate(f32, .{
+                    const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
                         -child_rect.pos[0],
                         -child_rect.pos[1],
                         0,
@@ -143,7 +143,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-pub fn getMinSize(this: *@This()) [2]f32 {
+pub fn getMinSize(this: *@This()) [2]f64 {
     const main_axis: usize = switch (this.direction) {
         .row => 0,
         .column => 1,
@@ -153,7 +153,7 @@ pub fn getMinSize(this: *@This()) [2]f32 {
         .column => 0,
     };
 
-    var min_size = [2]f32{ 0, 0 };
+    var min_size = [2]f64{ 0, 0 };
     for (this.children.keys()) |child_element| {
         const child_min = child_element.getMinSize();
 
@@ -163,7 +163,7 @@ pub fn getMinSize(this: *@This()) [2]f32 {
     return min_size;
 }
 
-pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
+pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     const content_min_size = this.getMinSize();
 
     const main_axis: usize = switch (this.direction) {
@@ -176,14 +176,14 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
     };
 
     // Do a first pass where we divide the space equally between the children
-    const main_equal_space_per_child = max_size[main_axis] / @as(f32, @floatFromInt(this.children.count()));
+    const main_equal_space_per_child = max_size[main_axis] / @as(f64, @floatFromInt(this.children.count()));
 
-    var main_space_used: f32 = 0;
-    var cross_min_width: f32 = min_size[cross_axis];
-    var children_requesting_space: f32 = 0;
+    var main_space_used: f64 = 0;
+    var cross_min_width: f64 = min_size[cross_axis];
+    var children_requesting_space: f64 = 0;
     for (this.children.keys(), this.children.values()) |child_element, *child_rect| {
-        var constraint_min: [2]f32 = undefined;
-        var constraint_max: [2]f32 = undefined;
+        var constraint_min: [2]f64 = undefined;
+        var constraint_max: [2]f64 = undefined;
 
         constraint_min[main_axis] = 0;
         constraint_min[cross_axis] = cross_min_width;
@@ -210,8 +210,8 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
         cross_min_width = min_size[cross_axis];
         children_requesting_space = 0;
         for (this.children.keys(), this.children.values()) |child_element, *child_rect| {
-            var constraint_min: [2]f32 = undefined;
-            var constraint_max: [2]f32 = undefined;
+            var constraint_min: [2]f64 = undefined;
+            var constraint_max: [2]f64 = undefined;
 
             constraint_min[main_axis] = child_rect.size[main_axis];
             constraint_min[cross_axis] = child_rect.size[cross_axis];
@@ -235,18 +235,18 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
 
     main_space_used = @max(content_min_size[main_axis], main_space_used);
 
-    const num_items: f32 = @floatFromInt(this.children.count());
+    const num_items: f64 = @floatFromInt(this.children.count());
 
-    const space_before: f32 = switch (this.justification) {
+    const space_before: f64 = switch (this.justification) {
         .start, .space_between => 0,
         .center => (max_size[main_axis] - main_space_used) / 2,
         .end => max_size[main_axis] - main_space_used,
     };
-    const space_between: f32 = switch (this.justification) {
+    const space_between: f64 = switch (this.justification) {
         .start, .center, .end => 0,
         .space_between => (max_size[main_axis] - main_space_used) / @max(num_items - 1, 1),
     };
-    const space_after: f32 = switch (this.justification) {
+    const space_after: f64 = switch (this.justification) {
         .start => max_size[main_axis] - main_space_used,
         .center => (max_size[main_axis] - main_space_used) / 2,
         .space_between, .end => 0,
@@ -255,7 +255,7 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
 
     const cross_axis_size = @min(max_size[cross_axis], cross_min_width);
 
-    var main_pos: f32 = space_before;
+    var main_pos: f64 = space_before;
 
     for (this.children.values()) |*child_rect| {
         child_rect.pos[main_axis] = main_pos;
@@ -269,13 +269,13 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
         main_pos += child_rect.size[main_axis] + space_between;
     }
 
-    var bounds = [2]f32{ 0, 0 };
+    var bounds = [2]f64{ 0, 0 };
     bounds[main_axis] = max_size[main_axis];
     bounds[cross_axis] = cross_axis_size;
     return bounds;
 }
 
-fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
+fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
     for (this.children.keys(), this.children.values()) |child_element, child_rect| {
         child_element.render(canvas, .{
             .pos = .{
@@ -290,6 +290,6 @@ fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f32);
+const Rect = seizer.geometry.Rect(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

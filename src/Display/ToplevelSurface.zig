@@ -16,6 +16,7 @@ new_configuration: Configuration,
 
 swapchain: Swapchain,
 on_render_listener: ?*OnRenderListener,
+on_input_listener: ?*OnInputListener,
 
 pub const InitOptions = struct {
     size: [2]u32 = .{ 640, 480 },
@@ -26,6 +27,13 @@ pub const OnRenderListener = struct {
     userdata: ?*anyopaque,
 
     pub const CallbackFn = *const fn (*OnRenderListener, *ToplevelSurface) anyerror!void;
+};
+
+pub const OnInputListener = struct {
+    callback: CallbackFn,
+    userdata: ?*anyopaque,
+
+    pub const CallbackFn = *const fn (*OnInputListener, *ToplevelSurface, seizer.input.Event) anyerror!void;
 };
 
 pub fn deinit(this: *@This()) void {
@@ -61,6 +69,14 @@ pub fn setOnRender(this: *@This(), on_render_listener: *OnRenderListener, callba
         .userdata = userdata,
     };
     this.on_render_listener = on_render_listener;
+}
+
+pub fn setOnInput(this: *@This(), input_listener: *OnInputListener, callback: OnInputListener.CallbackFn, userdata: ?*anyopaque) void {
+    input_listener.* = .{
+        .callback = callback,
+        .userdata = userdata,
+    };
+    this.on_input_listener = input_listener;
 }
 
 pub fn getBuffer(this: *@This()) !Display.Buffer {

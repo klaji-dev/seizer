@@ -89,14 +89,14 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
     }
     return .{
         .rect = this.child_rect,
-        .transform = seizer.geometry.mat4.identity(f32),
+        .transform = seizer.geometry.mat4.identity(f64),
     };
 }
 
 fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     if (this.child == null) return null;
 
-    const child_event = event.transform(seizer.geometry.mat4.translate(f32, .{
+    const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
         -this.child_rect.pos[0],
         -this.child_rect.pos[1],
         0,
@@ -118,7 +118,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-fn getMinSize(this: *@This()) [2]f32 {
+fn getMinSize(this: *@This()) [2]f64 {
     const padding_size = this.style.padding.size();
 
     if (this.child) |child| {
@@ -132,7 +132,7 @@ fn getMinSize(this: *@This()) [2]f32 {
     return padding_size;
 }
 
-pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
+pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     const padding_size = this.style.padding.size();
 
     if (this.child) |child| {
@@ -153,9 +153,8 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
     return padding_size;
 }
 
-fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
-    this.style.background_image.draw(canvas, rect, .{
-        .scale = 1,
+fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
+    canvas.ninePatch(rect.pos, rect.size, this.style.background_image.image, this.style.background_image.inset, .{
         .color = this.style.background_color,
     });
 
@@ -173,6 +172,6 @@ fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f32);
+const Rect = seizer.geometry.Rect(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

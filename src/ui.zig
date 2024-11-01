@@ -1,6 +1,6 @@
 pub const Element = @import("./ui/Element.zig");
 
-pub const Rect = seizer.geometry.Rect(f32);
+pub const Rect = seizer.geometry.Rect(f64);
 
 pub const Stage = struct {
     gpa: std.mem.Allocator,
@@ -76,7 +76,7 @@ pub const Stage = struct {
         return false;
     }
 
-    pub fn render(this: *Stage, canvas: Canvas.Transformed, window_size: [2]f32) void {
+    pub fn render(this: *Stage, canvas: Canvas, window_size: [2]f64) void {
         if (this.needs_layout) {
             if (this.root) |r| _ = r.layout(window_size, window_size);
             for (this.popups.keys()) |popup| {
@@ -261,21 +261,21 @@ pub const Stage = struct {
 };
 
 pub const Style = struct {
-    padding: seizer.geometry.Inset(f32),
+    padding: seizer.geometry.Inset(f64),
     text_font: *const Font,
-    text_scale: f32,
-    text_color: [4]u8,
-    background_image: seizer.NinePatch,
-    background_color: [4]u8,
+    text_scale: f64,
+    text_color: [4]f64,
+    background_image: seizer.Canvas.NinePatch,
+    background_color: [4]f64,
 
     /// Override specific fields without having to type them all out.
     pub fn with(inherited: @This(), overrides: struct {
-        padding: ?seizer.geometry.Inset(f32) = null,
+        padding: ?seizer.geometry.Inset(f64) = null,
         text_font: ?*const Font = null,
-        text_scale: ?f32 = null,
-        text_color: ?[4]u8 = null,
-        background_image: ?seizer.NinePatch = null,
-        background_color: ?[4]u8 = null,
+        text_scale: ?f64 = null,
+        text_color: ?[4]f64 = null,
+        background_image: ?seizer.Canvas.NinePatch = null,
+        background_color: ?[4]f64 = null,
     }) @This() {
         return @This(){
             .padding = overrides.padding orelse inherited.padding,

@@ -13,7 +13,7 @@ xdg_wm_base_listener: shimizu.Listener,
 
 seat: ?Seat,
 
-surfaces: std.AutoHashMapUnmanaged(shimizu.Object.WithInterface(wayland.wl_surface), void),
+surfaces: std.AutoHashMapUnmanaged(shimizu.Object.WithInterface(wayland.wl_surface), *ToplevelSurface),
 
 pub fn init(this: *@This(), allocator: std.mem.Allocator, loop: *xev.Loop) !void {
     this.* = .{
@@ -81,6 +81,9 @@ pub fn init(this: *@This(), allocator: std.mem.Allocator, loop: *xev.Loop) !void
 }
 
 pub fn deinit(this: *@This()) void {
+    if (this.seat) |*seat| {
+        seat.deinit();
+    }
     this.surfaces.deinit(this.allocator);
     this.connection.close();
 }
@@ -140,6 +143,7 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
 
         .swapchain = .{},
         .on_render_listener = null,
+        .on_input_listener = null,
     };
 
     xdg_surface.setEventListener(&toplevel_surface.xdg_surface_listener, ToplevelSurface.onXdgSurfaceEvent, null);
@@ -156,7 +160,7 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
     // if (options.app_name) |app_name| {
     //     xdg_toplevel.sendRequest(.set_app_id, .{ .app_id = app_name }) catch return error.ConnectionLost;
     // }
-    this.surfaces.putAssumeCapacity(wl_surface.id, {});
+    this.surfaces.putAssumeCapacity(wl_surface.id, toplevel_surface);
 }
 
 const Globals = struct {
@@ -184,21 +188,18 @@ fn onRegistryEvent(registry_listener: *shimizu.Listener, registry: shimizu.Proxy
     switch (event) {
         .global => |global| {
             if (std.mem.eql(u8, global.interface, wayland.wl_seat.NAME) and global.version >= wayland.wl_seat.VERSION) {
-                log.debug("{s}:{} unimplemented", .{ @src().file, @src().line });
-                // this.seats.ensureUnusedCapacity(this.allocator, 1) catch return;
+                if (this.seat != null) {
+                    log.warn("multiple seats detected; multiple seat handling not implemented.", .{});
+                    return;
+                }
+                const wl_seat = try registry.connection.createObject(wayland.wl_seat);
+                try registry.sendRequest(.bind, .{ .name = global.name, .id = wl_seat.id.asGenericNewId() });
 
-                // const seat = this.allocator.create(Seat) catch return;
-                // const wl_seat = try registry.connection.createObject(wayland.wl_seat);
-                // try registry.sendRequest(.bind, .{ .name = global.name, .id = wl_seat.id.asGenericNewId() });
-
-                // seat.* = .{
-                //     .wayland_manager = this,
-                //     .wl_seat = wl_seat,
-                //     .focused_window = null,
-                // };
-                // wl_seat.setEventListener(&seat.listener, Seat.onSeatCallback, seat);
-
-                // this.seats.appendAssumeCapacity(seat);
+                this.seat = .{
+                    .wl_seat = wl_seat.id,
+                };
+                wl_seat.setEventListener(&this.seat.?.listener, onWlSeatEvent, this);
+                return;
             } else inline for (@typeInfo(Globals).Struct.fields) |field| {
                 if (@typeInfo(field.type) != .Optional) continue;
                 const INTERFACE = @typeInfo(field.type).Optional.child._SPECIFIED_INTERFACE;
@@ -238,11 +239,12 @@ const Seat = struct {
 
     listener: shimizu.Listener = undefined,
 
-    pointer_pos: [2]f32 = .{ 0, 0 },
-    scroll_vector: [2]f32 = .{ 0, 0 },
+    pointer_pos: [2]f64 = .{ 0, 0 },
+    scroll_vector: [2]f64 = .{ 0, 0 },
     cursor_wl_surface: ?shimizu.Object.WithInterface(wayland.wl_surface) = null,
     wp_viewport: ?shimizu.Object.WithInterface(viewporter.wp_viewport) = null,
 
+    pointer_focus: ?shimizu.Object.WithInterface(wayland.wl_surface) = null,
     pointer_listener: shimizu.Listener = undefined,
     pointer_serial: u32 = 0,
     cursor_fractional_scale: ?shimizu.Object.WithInterface(fractional_scale_v1.wp_fractional_scale_v1) = null,
@@ -255,64 +257,68 @@ const Seat = struct {
     keyboard_repeat_rate: u32 = 0,
     keyboard_repeat_delay: u32 = 0,
 
-    fn destroy(this: *@This()) void {
+    fn deinit(this: *@This()) void {
         if (this.keymap) |*keymap| keymap.deinit();
-        this.wayland_manager.allocator.destroy(this);
     }
 };
 
-fn onSeatCallback(listener: *shimizu.Listener, wl_seat: shimizu.Proxy(wayland.wl_seat), event: wayland.wl_seat.Event) !void {
-    const this: *Seat = @fieldParentPtr("listener", listener);
-    _ = wl_seat;
+fn onWlSeatEvent(listener: *shimizu.Listener, wl_seat: shimizu.Proxy(wayland.wl_seat), event: wayland.wl_seat.Event) !void {
+    const this: *@This() = @ptrCast(@alignCast(listener.userdata));
+    const seat: *Seat = @fieldParentPtr("listener", listener);
+    std.debug.assert(&this.seat.? == seat);
     switch (event) {
         .capabilities => |capabilities| {
             if (capabilities.capabilities.keyboard) {
-                if (this.wl_keyboard == null) {
-                    this.wl_keyboard = try this.wl_seat.sendRequest(.get_keyboard, .{});
-                    this.wl_keyboard.?.setEventListener(&this.keyboard_listener, Seat.onKeyboardCallback, this);
+                if (seat.wl_keyboard == null) {
+                    const wl_keyboard = try wl_seat.sendRequest(.get_keyboard, .{});
+                    seat.wl_keyboard = wl_keyboard.id;
+                    wl_keyboard.setEventListener(&seat.keyboard_listener, onKeyboardCallback, this);
                 }
             } else {
-                if (this.wl_keyboard) |keyboard| {
-                    try keyboard.sendRequest(.release, .{});
-                    this.wl_keyboard = null;
+                if (seat.wl_keyboard) |wl_keyboard_id| {
+                    const wl_keyboard: shimizu.Proxy(wayland.wl_keyboard) = .{ .connection = &this.connection, .id = wl_keyboard_id };
+                    try wl_keyboard.sendRequest(.release, .{});
+                    seat.wl_keyboard = null;
                 }
             }
 
             if (capabilities.capabilities.pointer) {
-                if (this.wl_pointer == null) {
-                    this.wl_pointer = try this.wl_seat.sendRequest(.get_pointer, .{});
-                    this.wl_pointer.?.setEventListener(&this.pointer_listener, Seat.onPointerCallback, null);
+                if (seat.wl_pointer == null) {
+                    const wl_pointer = try wl_seat.sendRequest(.get_pointer, .{});
+                    seat.wl_pointer = wl_pointer.id;
+                    wl_pointer.setEventListener(&seat.pointer_listener, onPointerCallback, this);
                 }
-                if (this.cursor_wl_surface == null) {
-                    this.cursor_wl_surface = try this.wayland_manager.connection.sendRequest(wayland.wl_compositor, this.wayland_manager.globals.wl_compositor.?, .create_surface, .{});
+                if (seat.cursor_wl_surface == null) {
+                    // const cursor_surface = try this.connection.sendRequest(wayland.wl_compositor, this.globals.wl_compositor.?, .create_surface, .{});
+                    // seat.cursor_wl_surface = cursor_surface.id;
 
-                    if (this.wayland_manager.globals.wp_viewporter) |wp_viewporter| {
-                        this.wp_viewport = try this.wayland_manager.connection.sendRequest(viewporter.wp_viewporter, wp_viewporter, .get_viewport, .{ .surface = this.cursor_wl_surface.?.id });
-                    }
+                    // if (this.globals.wp_viewporter) |wp_viewporter| {
+                    //     seat.wp_viewport = try seat.wayland_manager.connection.sendRequest(viewporter.wp_viewporter, wp_viewporter, .get_viewport, .{ .surface = seat.cursor_wl_surface.?.id });
+                    // }
 
-                    if (this.wayland_manager.globals.wp_fractional_scale_manager_v1) |scale_man| {
-                        this.cursor_fractional_scale = try this.wayland_manager.connection.sendRequest(fractional_scale_v1.wp_fractional_scale_manager_v1, scale_man, .get_fractional_scale, .{ .surface = this.cursor_wl_surface.?.id });
-                        // this.cursor_fractional_scale.?.userdata = this;
-                        // this.cursor_fractional_scale.?.on_event = onCursorFractionalScaleEvent;
-                    }
+                    // if (seat.wayland_manager.globals.wp_fractional_scale_manager_v1) |scale_man| {
+                    //     seat.cursor_fractional_scale = try seat.wayland_manager.connection.sendRequest(fractional_scale_v1.wp_fractional_scale_manager_v1, scale_man, .get_fractional_scale, .{ .surface = seat.cursor_wl_surface.?.id });
+                    //     // seat.cursor_fractional_scale.?.userdata = seat;
+                    //     // seat.cursor_fractional_scale.?.on_event = onCursorFractionalScaleEvent;
+                    // }
                 }
             } else {
-                if (this.wl_pointer) |pointer| {
-                    pointer.sendRequest(.release, .{}) catch {};
-                    this.wl_pointer = null;
+                if (seat.wl_pointer) |pointer_id| {
+                    try this.connection.sendRequest(wayland.wl_pointer, pointer_id, .release, .{});
+                    seat.wl_pointer = null;
                 }
-                if (this.wp_viewport) |wp_viewport| {
-                    wp_viewport.sendRequest(.destroy, .{}) catch {};
-                    this.wp_viewport = null;
-                }
-                if (this.cursor_fractional_scale) |frac_scale| {
-                    frac_scale.sendRequest(.destroy, .{}) catch {};
-                    this.cursor_fractional_scale = null;
-                }
-                if (this.cursor_wl_surface) |surface| {
-                    surface.sendRequest(.destroy, .{}) catch {};
-                    this.cursor_wl_surface = null;
-                }
+                // if (seat.wp_viewport) |wp_viewport_id| {
+                //     try this.connection.sendRequest(viewporter.wp_viewport, wp_viewport_id, .release, .{});
+                //     seat.wp_viewport = null;
+                // }
+                // if (seat.cursor_fractional_scale) |frac_scale| {
+                //     frac_scale.sendRequest(.destroy, .{}) catch {};
+                //     seat.cursor_fractional_scale = null;
+                // }
+                // if (seat.cursor_wl_surface) |surface| {
+                //     surface.sendRequest(.destroy, .{}) catch {};
+                //     seat.cursor_wl_surface = null;
+                // }
             }
         },
         .name => {},
@@ -320,7 +326,9 @@ fn onSeatCallback(listener: *shimizu.Listener, wl_seat: shimizu.Proxy(wayland.wl
 }
 
 fn onKeyboardCallback(listener: *shimizu.Listener, wl_keyboard: shimizu.Proxy(wayland.wl_keyboard), event: wayland.wl_keyboard.Event) !void {
-    const this: *@This() = @fieldParentPtr("keyboard_listener", listener);
+    const this: *@This() = @ptrCast(@alignCast(listener.userdata));
+    const seat: *Seat = @fieldParentPtr("keyboard_listener", listener);
+    std.debug.assert(&this.seat.? == seat);
     _ = wl_keyboard;
     switch (event) {
         .keymap => |keymap_info| {
@@ -333,75 +341,73 @@ fn onKeyboardCallback(listener: *shimizu.Listener, wl_keyboard: shimizu.Proxy(wa
             };
             defer std.posix.munmap(new_keymap_source);
 
-            if (this.keymap) |*old_keymap| {
+            if (seat.keymap) |*old_keymap| {
                 old_keymap.deinit();
-                this.keymap = null;
+                seat.keymap = null;
             }
-            this.keymap = xkb.Keymap.fromString(this.wayland_manager.allocator, new_keymap_source) catch |err| {
+            seat.keymap = xkb.Keymap.fromString(this.allocator, new_keymap_source) catch |err| {
                 log.warn("failed to parse keymap: {}", .{err});
                 if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace.*);
                 return;
             };
         },
         .repeat_info => |repeat_info| {
-            this.keyboard_repeat_rate = @intCast(repeat_info.rate);
-            this.keyboard_repeat_delay = @intCast(repeat_info.delay);
+            seat.keyboard_repeat_rate = @intCast(repeat_info.rate);
+            seat.keyboard_repeat_delay = @intCast(repeat_info.delay);
         },
         .modifiers => |m| {
-            this.keymap_state = xkb.Keymap.State{
+            seat.keymap_state = xkb.Keymap.State{
                 .base_modifiers = @bitCast(m.mods_depressed),
                 .latched_modifiers = @bitCast(m.mods_latched),
                 .locked_modifiers = @bitCast(m.mods_locked),
                 .group = @intCast(m.group),
             };
         },
-        .key => |k| if (this.keymap) |keymap| {
+        .key => |k| if (seat.keymap) |keymap| {
             const scancode = evdevToSeizer(k.key);
-            const symbol = keymap.getSymbol(@enumFromInt(k.key + 8), this.keymap_state) orelse return;
+            const symbol = keymap.getSymbol(@enumFromInt(k.key + 8), seat.keymap_state) orelse return;
             const key = xkbSymbolToSeizerKey(symbol);
-            const xkb_modifiers = this.keymap_state.getModifiers();
+            const xkb_modifiers = seat.keymap_state.getModifiers();
 
-            if (this.focused_window) |window| {
-                if (window.on_event) |on_event| {
-                    on_event(@ptrCast(window), .{ .input = seizer.input.Event{ .key = .{
-                        .key = key,
-                        .scancode = scancode,
-                        .action = switch (k.state) {
-                            .pressed => .press,
-                            .released => .release,
+            const pointer_focus_id = seat.pointer_focus orelse return;
+            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const input_listener = pointer_focus.on_input_listener orelse return;
+
+            input_listener.callback(input_listener, pointer_focus, .{ .key = .{
+                .key = key,
+                .scancode = scancode,
+                .action = switch (k.state) {
+                    .pressed => .press,
+                    .released => .release,
+                },
+                .mods = .{
+                    .shift = xkb_modifiers.shift,
+                    .caps_lock = xkb_modifiers.lock,
+                    .control = xkb_modifiers.control,
+                },
+            } }) catch |err| {
+                std.debug.print("{s}\n", .{@errorName(err)});
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
+                }
+            };
+
+            if (symbol.character) |character| {
+                if (k.state == .pressed) {
+                    var text_utf8 = std.BoundedArray(u8, 16){};
+                    text_utf8.resize(std.unicode.utf8CodepointSequenceLength(character) catch unreachable) catch unreachable;
+                    _ = std.unicode.utf8Encode(character, text_utf8.slice()) catch unreachable;
+
+                    input_listener.callback(input_listener, pointer_focus, .{
+                        .text = .{
+                            .text = text_utf8,
                         },
-                        .mods = .{
-                            .shift = xkb_modifiers.shift,
-                            .caps_lock = xkb_modifiers.lock,
-                            .control = xkb_modifiers.control,
-                        },
-                    } } }) catch |err| {
+                    }) catch |err| {
                         std.debug.print("{s}\n", .{@errorName(err)});
                         if (@errorReturnTrace()) |trace| {
                             std.debug.dumpStackTrace(trace.*);
                         }
                     };
-                }
-            }
-
-            if (this.focused_window) |window| {
-                if (window.on_event) |on_event| {
-                    if (symbol.character) |character| {
-                        if (k.state == .pressed) {
-                            var text_utf8 = std.BoundedArray(u8, 16){};
-                            text_utf8.resize(std.unicode.utf8CodepointSequenceLength(character) catch unreachable) catch unreachable;
-                            _ = std.unicode.utf8Encode(character, text_utf8.slice()) catch unreachable;
-
-                            on_event(@ptrCast(window), .{ .input = seizer.input.Event{ .text = .{
-                                .text = text_utf8,
-                            } } }) catch |err| {
-                                std.debug.print("{s}\n", .{@errorName(err)});
-                                if (@errorReturnTrace()) |trace| {
-                                    std.debug.dumpStackTrace(trace.*);
-                                }
-                            };
-                        }
-                    }
                 }
             }
         },
@@ -409,73 +415,72 @@ fn onKeyboardCallback(listener: *shimizu.Listener, wl_keyboard: shimizu.Proxy(wa
     }
 }
 
-fn onPointerCallback(listener: *shimizu.Listener, pointer: shimizu.Proxy(wayland.wl_pointer), event: wayland.wl_pointer.Event) !void {
-    const this: *@This() = @fieldParentPtr("pointer_listener", listener);
-    _ = pointer;
+fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayland.wl_pointer), event: wayland.wl_pointer.Event) !void {
+    const this: *@This() = @ptrCast(@alignCast(listener.userdata));
+    const seat: *Seat = @fieldParentPtr("pointer_listener", listener);
+    _ = wl_pointer;
     switch (event) {
         .enter => |enter| {
-            this.focused_window = this.wayland_manager.windows.get(enter.surface);
-            this.pointer_serial = enter.serial;
-            this.updateCursorImage() catch {};
+            seat.pointer_focus = enter.surface;
+            seat.pointer_serial = enter.serial;
+            updateCursorImage(seat) catch {};
         },
         .leave => |leave| {
-            const left_window = this.wayland_manager.windows.get(leave.surface);
-            if (std.meta.eql(left_window, this.focused_window)) {
-                this.focused_window = null;
+            if (seat.pointer_focus == leave.surface) {
+                seat.pointer_focus = null;
             }
         },
         .motion => |motion| {
-            if (this.focused_window) |window| {
-                if (window.on_event) |on_event| {
-                    this.pointer_pos = [2]f32{ motion.surface_x.toFloat(f32), motion.surface_y.toFloat(f32) };
-                    on_event(@ptrCast(window), seizer.Display.Window.Event{ .input = .{ .hover = .{
-                        .pos = this.pointer_pos,
-                        .modifiers = .{ .left = false, .right = false, .middle = false },
-                    } } }) catch |err| {
-                        std.debug.print("{s}\n", .{@errorName(err)});
-                        if (@errorReturnTrace()) |trace| {
-                            std.debug.dumpStackTrace(trace.*);
-                        }
-                    };
+            const pointer_focus_id = seat.pointer_focus orelse return;
+            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const input_listener = pointer_focus.on_input_listener orelse return;
+
+            seat.pointer_pos = [2]f64{ motion.surface_x.toFloat(f64), motion.surface_y.toFloat(f64) };
+            input_listener.callback(input_listener, pointer_focus, .{ .hover = .{
+                .pos = seat.pointer_pos,
+                .modifiers = .{ .left = false, .right = false, .middle = false },
+            } }) catch |err| {
+                std.debug.print("{s}\n", .{@errorName(err)});
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
                 }
-            }
+            };
         },
         .button => |button| {
-            if (this.focused_window) |window| {
-                if (window.on_event) |on_event| {
-                    on_event(@ptrCast(window), seizer.Display.Window.Event{ .input = .{ .click = .{
-                        .pos = this.pointer_pos,
-                        .button = @enumFromInt(button.button),
-                        .pressed = button.state == .pressed,
-                    } } }) catch |err| {
-                        std.debug.print("{s}\n", .{@errorName(err)});
-                        if (@errorReturnTrace()) |trace| {
-                            std.debug.dumpStackTrace(trace.*);
-                        }
-                    };
+            const pointer_focus_id = seat.pointer_focus orelse return;
+            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const input_listener = pointer_focus.on_input_listener orelse return;
+
+            input_listener.callback(input_listener, pointer_focus, .{ .click = .{
+                .pos = seat.pointer_pos,
+                .button = @enumFromInt(button.button),
+                .pressed = button.state == .pressed,
+            } }) catch |err| {
+                std.debug.print("{s}\n", .{@errorName(err)});
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
                 }
-            }
+            };
         },
         .axis => |axis| {
             switch (axis.axis) {
-                .horizontal_scroll => this.scroll_vector[0] += axis.value.toFloat(f32),
-                .vertical_scroll => this.scroll_vector[1] += axis.value.toFloat(f32),
+                .horizontal_scroll => seat.scroll_vector[0] += axis.value.toFloat(f32),
+                .vertical_scroll => seat.scroll_vector[1] += axis.value.toFloat(f32),
             }
-            // },
-            // .frame => {
-            if (this.focused_window) |window| {
-                if (window.on_event) |on_event| {
-                    on_event(@ptrCast(window), seizer.Display.Window.Event{ .input = .{ .scroll = .{
-                        .offset = this.scroll_vector,
-                    } } }) catch |err| {
-                        std.debug.print("{s}\n", .{@errorName(err)});
-                        if (@errorReturnTrace()) |trace| {
-                            std.debug.dumpStackTrace(trace.*);
-                        }
-                    };
+
+            defer seat.scroll_vector = .{ 0, 0 };
+            const pointer_focus_id = seat.pointer_focus orelse return;
+            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const input_listener = pointer_focus.on_input_listener orelse return;
+
+            input_listener.callback(input_listener, pointer_focus, .{ .scroll = .{
+                .offset = seat.scroll_vector,
+            } }) catch |err| {
+                std.debug.print("{s}\n", .{@errorName(err)});
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
                 }
-            }
-            this.scroll_vector = .{ 0, 0 };
+            };
         },
         else => {},
     }
@@ -492,9 +497,11 @@ fn onCursorFractionalScaleEvent(wp_fractional_scale: *fractional_scale_v1.wp_fra
     }
 }
 
-fn updateCursorImage(this: *@This()) !void {
-    if (!this.wayland_manager._isCreateBufferFromOpaqueFdSupported()) return;
+fn updateCursorImage(seat: *Seat) !void {
+    if (true) return;
 
+    _ = seat;
+    const this = undefined;
     const width_hint: seizer.tvg.rendering.SizeHint = if (this.wp_viewport != null) .{ .width = (32 * this.pointer_scale) / 120 } else .inherit;
     // set cursor image
     var default_cursor_image = try seizer.tvg.rendering.renderBuffer(

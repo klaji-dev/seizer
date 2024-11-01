@@ -69,6 +69,6 @@ pub fn xkbSymbolToSeizerKey(symbol: xkb.Symbol) Key {
     };
 }
 
-const Key = @import("../../seizer.zig").input.keyboard.Key;
+const Key = @import("../seizer.zig").input.keyboard.Key;
 const xkb = @import("xkb");
 const std = @import("std");
