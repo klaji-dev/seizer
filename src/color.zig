@@ -28,10 +28,10 @@ pub fn fx4FromUx4(F: type, U: type, a: [4]U) [4]F {
 
 pub fn ux4FromFx4(U: type, F: type, a: [4]F) [4]U {
     return .{
-        @intFromFloat(a[0] * std.math.maxInt(U)),
-        @intFromFloat(a[1] * std.math.maxInt(U)),
-        @intFromFloat(a[2] * std.math.maxInt(U)),
-        @intFromFloat(a[3] * std.math.maxInt(U)),
+        @intFromFloat(std.math.clamp(a[0] * std.math.maxInt(U), 0, std.math.maxInt(U))),
+        @intFromFloat(std.math.clamp(a[1] * std.math.maxInt(U), 0, std.math.maxInt(U))),
+        @intFromFloat(std.math.clamp(a[2] * std.math.maxInt(U), 0, std.math.maxInt(U))),
+        @intFromFloat(std.math.clamp(a[3] * std.math.maxInt(U), 0, std.math.maxInt(U))),
     };
 }
 
