@@ -162,7 +162,7 @@ pub fn build(b: *Builder) !void {
     test_step.dependOn(&run_module_test_exe.step);
 
     // benchmarks
-    const benchmark_optimize = std.builtin.OptimizeMode.ReleaseFast;
+    const benchmark_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "The optimization mode to use for the benchmarks (default ReleaseFast)") orelse .ReleaseFast;
     const zbench_dep = b.dependency("zbench", .{
         .target = target,
         .optimize = benchmark_optimize,
