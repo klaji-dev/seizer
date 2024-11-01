@@ -88,14 +88,6 @@ pub fn build(b: *Builder) !void {
         },
     });
 
-    // a tool that bundles a wasm binary into an html file
-    const bundle_webpage_exe = b.addExecutable(.{
-        .name = "bundle-webpage",
-        .root_source_file = b.path("tools/bundle-webpage.zig"),
-        .target = b.graph.host,
-    });
-    b.installArtifact(bundle_webpage_exe);
-
     // seizer
     const module = b.addModule("seizer", .{
         .root_source_file = b.path("src/seizer.zig"),
