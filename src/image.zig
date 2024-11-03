@@ -1020,6 +1020,84 @@ test "Tiled composite == compositeLinear" {
     }
 }
 
+/// Pixels are stored in a Z-Order curve pattern to increase pixel locality.
+pub fn ZOrdered(Pixel: type) type {
+    std.debug.assert(@hasDecl(Pixel, "fromArgb8888"));
+    std.debug.assert(@hasDecl(Pixel, "toArgb8888"));
+    std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
+    return struct {
+        pixels: [*]Pixel,
+        size: [2]u32,
+        start_px: [2]u32,
+        end_px: [2]u32,
+
+        pub fn alloc(allocator: std.mem.Allocator, size: [2]u32) !@This() {
+            const max_dimension = @max(size[0], size[1]);
+            const pixels = try allocator.alloc(Pixel, max_dimension * max_dimension);
+            errdefer allocator.free(pixels);
+
+            return .{
+                .pixels = pixels.ptr,
+                .size = size,
+                .start_px = .{ 0, 0 },
+                .end_px = size,
+            };
+        }
+
+        pub fn clear(this: @This(), pixel: Pixel) void {
+            const max_dimension = @max(this.size[0], this.size[1]);
+            @memset(this.pixels[0 .. max_dimension * max_dimension], pixel);
+        }
+
+        pub fn free(this: @This(), allocator: std.mem.Allocator) void {
+            const max_dimension = @max(this.size[0], this.size[1]);
+            allocator.free(this.pixels[0 .. max_dimension * max_dimension]);
+        }
+
+        pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) @This() {
+            const new_start = [2]u32{
+                this.start_px[0] + offset[0],
+                this.start_px[1] + offset[1],
+            };
+            const new_end = [2]u32{
+                new_start[0] + size[0],
+                new_start[1] + size[1],
+            };
+            std.debug.assert(new_start[0] <= this.size[0] and new_start[1] <= this.size[1]);
+            std.debug.assert(new_end[0] <= this.size[0] and new_end[1] <= this.size[1]);
+
+            return .{
+                .pixels = this.pixels,
+                .size = this.size,
+                .start_px = new_start,
+                .end_px = new_end,
+            };
+        }
+
+        fn pixelIndex(pos: [2]u16) usize {
+            var index: u32 = 0;
+            for (0..16) |i_usize| {
+                const i: u4 = @intCast(i_usize);
+                index |= ((1 & (pos[0] >> i)) << (2 * i + 0));
+                index |= ((1 & (pos[1] >> i)) << (2 * i + 1));
+            }
+            return index;
+        }
+
+        pub fn setPixel(this: @This(), pos: [2]u32, color: Pixel) void {
+            std.debug.assert(this.start_px[0] + pos[0] < this.size[0] and this.start_px[1] + pos[1] < this.size[1]);
+            const index = pixelIndex(.{ @intCast(pos[0]), @intCast(pos[1]) });
+            this.pixels[index] = color;
+        }
+
+        pub fn getPixel(this: @This(), pos: [2]u32) Pixel {
+            std.debug.assert(this.start_px[0] + pos[0] < this.size[0] and this.start_px[1] + pos[1] < this.size[1]);
+            const index = pixelIndex(.{ @intCast(pos[0]), @intCast(pos[1]) });
+            return this.pixels[index];
+        }
+    };
+}
+
 const probes = @import("probes");
 const std = @import("std");
 const seizer = @import("./seizer.zig");
