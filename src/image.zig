@@ -18,6 +18,11 @@ pub fn Image(Pixel: type) type {
             };
         }
 
+        pub fn clear(this: @This(), pixel: Pixel) void {
+            std.debug.assert(this.size[0] == this.stride);
+            @memset(this.pixels[0 .. this.size[0] * this.size[1]], pixel);
+        }
+
         pub fn fromMemory(allocator: std.mem.Allocator, file_contents: []const u8) !@This() {
             var img = try zigimg.Image.fromMemory(allocator, file_contents);
             defer img.deinit();
@@ -163,18 +168,14 @@ pub fn Image(Pixel: type) type {
             }
         }
 
-        pub fn setPixel(this: @This(), pos: [2]i32, color: Pixel) void {
-            std.debug.assert(pos[0] >= 0 and pos[0] < this.size[0]);
-            std.debug.assert(pos[1] >= 0 and pos[1] < this.size[1]);
-            const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
-            this.pixels[@intCast(posu[1] * this.stride + posu[0])] = color;
+        pub fn setPixel(this: @This(), pos: [2]u32, color: Pixel) void {
+            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
+            this.pixels[pos[1] * this.stride + pos[0]] = color;
         }
 
-        pub fn getPixel(this: @This(), pos: [2]i32) Pixel {
-            std.debug.assert(pos[0] >= 0 and pos[0] < this.size[0]);
-            std.debug.assert(pos[1] >= 0 and pos[1] < this.size[1]);
-            const posu = [2]u32{ @intCast(pos[0]), @intCast(pos[1]) };
-            return this.pixels[@intCast(posu[1] * this.stride + posu[0])];
+        pub fn getPixel(this: @This(), pos: [2]u32) Pixel {
+            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
+            return this.pixels[pos[1] * this.stride + pos[0]];
         }
 
         pub fn resize(dst: @This(), src: @This()) void {
@@ -287,10 +288,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         pub const Tile = [tile_size[1]][tile_size[0]]Pixel;
 
         pub fn alloc(allocator: std.mem.Allocator, size_px: [2]u32) !@This() {
-            const size_in_tiles = [2]u32{
-                size_px[0] / tile_size[0],
-                size_px[1] / tile_size[1],
-            };
+            const size_in_tiles = sizeInTiles(size_px);
 
             const tiles = try allocator.alloc(Tile, size_in_tiles[0] * size_in_tiles[1]);
             errdefer allocator.free(tiles);
@@ -304,12 +302,25 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         }
 
         pub fn free(this: @This(), allocator: std.mem.Allocator) void {
-            const size_in_tiles = [2]u32{
-                this.size_px[0] / tile_size[0],
-                this.size_px[1] / tile_size[1],
-            };
-
+            const size_in_tiles = sizeInTiles(this.size_px);
             allocator.free(this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]);
+        }
+
+        pub fn clear(this: @This(), pixel: Pixel) void {
+            std.debug.assert(this.size_px[0] == this.end_px[0] and this.size_px[1] == this.end_px[1]);
+            const size_in_tiles = sizeInTiles(this.size_px);
+            for (this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]) |*tile| {
+                for (tile) |*row| {
+                    @memset(row, pixel);
+                }
+            }
+        }
+
+        fn sizeInTiles(size_px: [2]u32) [2]u32 {
+            return .{
+                (size_px[0] + (tile_size[0] + 1)) / tile_size[0],
+                (size_px[1] + (tile_size[1] + 1)) / tile_size[1],
+            };
         }
 
         pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) @This() {
@@ -333,6 +344,50 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         }
 
         pub fn composite(dst: @This(), src: @This()) void {
+            // And example of the problem we need to solve:
+            //
+            // ```zig
+            // Tiled(.{7,3}, Pixel).composite(
+            //     .{ // dst
+            //         .start_px = .{ 4, 1 },
+            //         .end_px = .{ 11, 5 },
+            //     },
+            //     .{ // src
+            //         .start_px = .{ 1, 0 },
+            //         .end_px = .{ 8, 4 },
+            //     },
+            // )
+            // ```
+            //
+            // `dst`:
+            //
+            // ```ascii-art
+            // tile x   0       1
+            //    y +-------+-------+
+            //      |       |       |
+            //    0 |    +------+   |
+            //      |    |      |   |
+            //      +----|  dst |---+
+            //      |    |      |   |
+            //    1 |    +------+   |
+            //      |       |       |
+            //      +-------+-------+
+            // ```
+            //
+            // `src`:
+            //
+            // ```ascii-art
+            // tile x   0       1
+            //    y +-------+-------+
+            //      | +------+      |
+            //    0 | |      |      |
+            //      | |  src |      |
+            //      +-|      |------+
+            //      | +------+      |
+            //    1 |       |       |
+            //      |       |       |
+            //      +-------+-------+
+            // ```
             const dst_size = [2]u32{
                 dst.end_px[0] - dst.start_px[0],
                 dst.end_px[1] - dst.start_px[1],
@@ -343,46 +398,290 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             };
             std.debug.assert(dst_size[0] == src_size[0] and dst_size[1] == src_size[1]);
 
-            const min_tile_pos = [2]u32{
+            const dst_min_tile_pos = [2]u32{
                 dst.start_px[0] / tile_size[0],
                 dst.start_px[1] / tile_size[1],
             };
-            const max_tile_pos = [2]u32{
-                dst.end_px[0] / tile_size[0],
-                dst.end_px[1] / tile_size[1],
+            const dst_max_tile_pos = [2]u32{
+                dst.end_px[0] / tile_size[0] + 1,
+                dst.end_px[1] / tile_size[1] + 1,
             };
 
-            const size_in_tiles = [2]u32{
-                dst.size_px[0] / tile_size[0],
-                dst.size_px[1] / tile_size[1],
-            };
+            const dst_size_in_tiles = sizeInTiles(dst.size_px);
+            const src_size_in_tiles = sizeInTiles(src.size_px);
 
-            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
-                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
-                    const tile_index = tile_y * size_in_tiles[0] + tile_x;
-                    const tile = &dst.tiles[tile_index];
+            for (dst_min_tile_pos[1]..dst_max_tile_pos[1]) |dst_tile_y| {
+                for (dst_min_tile_pos[0]..dst_max_tile_pos[0]) |dst_tile_x| {
+                    // Following on from the earlier example:
+                    //
+                    // `dst` tile `<0, 0>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      |.......|       |
+                    //    0 |....+------+   |
+                    //      |....|###   |   |
+                    //      +----|###   |---+
+                    //      |    |      |   |
+                    //    1 |    +------+   |
+                    //      |       |       |
+                    //      +-------+-------+
+                    //
+                    // tile_pos_px = <0, 0>
+                    //
+                    // dst_min_in_tile_px = `<4, 1>`
+                    // dst_max_in_tile_px = `<7, 3>`
+                    //
+                    // dst_min_offset_in_tile = `<0, 0>`
+                    // dst_max_offset_in_tile = `<3, 2>`
+                    // ```
 
-                    const tile_pos_in_px = [2]u32{
-                        @intCast(tile_x * tile_size[0]),
-                        @intCast(tile_y * tile_size[1]),
+                    // `dst` tile `<1, 0>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      |       |.......|
+                    //    0 |    +------+...|
+                    //      |    |  ####|...|
+                    //      +----|  ####|---+
+                    //      |    |      |   |
+                    //    1 |    +------+   |
+                    //      |       |       |
+                    //      +-------+-------+
+                    //
+                    // tile_pos_px = <7, 0>
+                    //
+                    // dst_min_in_tile_px = `<0, 1>`
+                    // dst_max_in_tile_px = `<4, 3>`
+                    //
+                    // dst_min_offset_in_tile = `<3, 0>`
+                    // dst_max_offset_in_tile = `<7, 2>`
+                    // ```
+
+                    // `dst` tile `<0, 1>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      |       |       |
+                    //    0 |    +------+   |
+                    //      |    |      |   |
+                    //      +----|###   |---+
+                    //      |....|###   |   |
+                    //    1 |....+------+   |
+                    //      |.......|       |
+                    //      +-------+-------+
+                    //
+                    // tile_pos_px = <0, 3>
+                    //
+                    // dst_min_in_tile_px = `<4, 0>`
+                    // dst_max_in_tile_px = `<7, 2>`
+                    //
+                    // dst_min_offset_in_tile = `<0, 2>`
+                    // dst_max_offset_in_tile = `<3, 4>`
+                    // ```
+
+                    // `dst` tile `<0, 1>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      |       |       |
+                    //    0 |    +------+   |
+                    //      |    |      |   |
+                    //      +----|  ####|---+
+                    //      |    |  ####|...|
+                    //    1 |    +------+...|
+                    //      |       |.......|
+                    //      +-------+-------+
+                    //
+                    // tile_pos_px = <7, 3>
+                    //
+                    // dst_min_in_tile_px = `<0, 0>`
+                    // dst_max_in_tile_px = `<4, 2>`
+                    //
+                    // dst_min_offset_in_tile = `<3, 2>`
+                    // dst_max_offset_in_tile = `<7, 4>`
+                    // ```
+                    const dst_tile_index = dst_tile_y * dst_size_in_tiles[0] + dst_tile_x;
+                    const dst_tile = &dst.tiles[dst_tile_index];
+
+                    const dst_tile_pos_in_px = [2]u32{
+                        @intCast(dst_tile_x * tile_size[0]),
+                        @intCast(dst_tile_y * tile_size[1]),
                     };
 
-                    const min_in_tile = [2]u32{
-                        dst.start_px[0] -| tile_pos_in_px[0],
-                        dst.start_px[1] -| tile_pos_in_px[1],
+                    const dst_min_in_tile_px = [2]u32{
+                        dst.start_px[0] -| dst_tile_pos_in_px[0],
+                        dst.start_px[1] -| dst_tile_pos_in_px[1],
                     };
-                    const max_in_tile = [2]u32{
-                        (dst.end_px[0] -| tile_pos_in_px[0]) % tile_size[0],
-                        (dst.end_px[1] -| tile_pos_in_px[1]) % tile_size[1],
+                    const dst_max_in_tile_px = [2]u32{
+                        @min(tile_size[0], (dst.end_px[0] -| dst_tile_pos_in_px[0])),
+                        @min(tile_size[1], (dst.end_px[1] -| dst_tile_pos_in_px[1])),
                     };
 
-                    for (min_in_tile[1]..max_in_tile[1]) |y| {
-                        for (min_in_tile[0]..max_in_tile[0]) |x| {
-                            const src_pos: [2]u32 = .{
-                                @intCast(tile_pos_in_px[0] + x - dst.start_px[0]),
-                                @intCast(tile_pos_in_px[1] + y - dst.start_px[1]),
+                    // For `dst` tile `<0,0>`, we will need to get the `src` tiles
+                    // for offsets starting `<0,0>` and ending at `<3,2>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      | +------+      |
+                    //    0 | |##    |      |
+                    //      | |      |      |
+                    //      +-|      |------+
+                    //      | +------+      |
+                    //    1 |       |       |
+                    //      |       |       |
+                    //      +-------+-------+
+                    // ```
+                    //
+                    // In this example, that would mean just `src` tile `<0,0>`.
+
+                    // For `dst` tile `<1,0>`, we will need to get the `src` tiles
+                    // for offsets starting `<3,0>` and ending at `<7,2>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      |.+------+......|
+                    //    0 |.|  ####|......|
+                    //      |.|      |......|
+                    //      +-|      |------+
+                    //      | +------+      |
+                    //    1 |       |       |
+                    //      |       |       |
+                    //      +-------+-------+
+                    // ```
+                    //
+                    // In this example, that would mean `src` tiles `<0,0>` and `<1,0>`.
+
+                    // For `dst` tile `<0,1>`, we will need to get the `src` tiles
+                    // for offsets starting `<0,2>` and ending at `<3,4>`:
+                    //
+                    // ```ascii-art
+                    // tile x   0       1
+                    //    y +-------+-------+
+                    //      |.+------+      |
+                    //    0 |.|      |      |
+                    //      |.|###   |      |
+                    //      +-|###   |------+
+                    //      |.+------+      |
+                    //    1 |.......|       |
+                    //      |.......|       |
+                    //      +-------+-------+
+                    // ```
+                    //
+                    // In this example, that would mean `src` tiles `<0,0>` and `<0,1>`.
+
+                    // The offset into the compositing region, which starts at `dst.start_px` in `dst` and `src.start_px` in `src`
+                    const min_offset_px = .{
+                        dst_tile_pos_in_px[0] + dst_min_in_tile_px[0] - dst.start_px[0],
+                        dst_tile_pos_in_px[1] + dst_min_in_tile_px[1] - dst.start_px[1],
+                    };
+                    const max_offset_px = .{
+                        dst_tile_pos_in_px[0] + dst_max_in_tile_px[0] - dst.start_px[0],
+                        dst_tile_pos_in_px[1] + dst_max_in_tile_px[1] - dst.start_px[1],
+                    };
+
+                    const src_start_tile = .{
+                        (src.start_px[0] + min_offset_px[0]) / tile_size[0],
+                        (src.start_px[1] + min_offset_px[1]) / tile_size[1],
+                    };
+                    const src_end_tile = .{
+                        (src.start_px[0] + max_offset_px[0]) / tile_size[0] + 1,
+                        (src.start_px[1] + max_offset_px[1]) / tile_size[1] + 1,
+                    };
+
+                    for (src_start_tile[1]..src_end_tile[1]) |src_tile_y| {
+                        for (src_start_tile[0]..src_end_tile[0]) |src_tile_x| {
+                            const src_tile_index = src_tile_y * src_size_in_tiles[0] + src_tile_x;
+                            const src_tile = &src.tiles[src_tile_index];
+
+                            // top left corner of the src tile
+                            const src_tile_pos_px = [2]u32{
+                                @intCast(src_tile_x * tile_size[0]),
+                                @intCast(src_tile_y * tile_size[1]),
                             };
-                            tile[y][x] = Pixel.compositeSrcOver(tile[y][x], src.getPixel(src_pos));
+
+                            // We need to find the 4 values of tile relative positions that constrain the composite region for both `src` and `dst`:
+                            //
+                            // 1. `min[0]`, AKA the left pos:
+                            //     ```ascii-art
+                            //      +--|--+
+                            //      |..|##|
+                            //      |..|##|
+                            //      +--|--+
+                            //     ```
+                            //
+                            // 2. `min[1]`, AKA the top pos:
+                            //     ```ascii-art
+                            //      +----+
+                            //      |....|
+                            //      ------
+                            //      |####|
+                            //      +----+
+                            //     ```
+                            const src_min_in_tile_px = [2]u32{
+                                // A saturating subtraction here means the src_min will either be 0 or an offset into the tile
+                                (src.start_px[0] + min_offset_px[0]) -| src_tile_pos_px[0],
+                                (src.start_px[1] + min_offset_px[1]) -| src_tile_pos_px[1],
+                            };
+
+                            // We already know the `dst_min_in_tile` in terms of the overall compositing region, but we need to find it in
+                            // terms of this `src` tile.
+                            const src_min_offset_px = [2]u32{
+                                (src_tile_pos_px[0] + src_min_in_tile_px[0]) - src.start_px[0],
+                                (src_tile_pos_px[1] + src_min_in_tile_px[1]) - src.start_px[1],
+                            };
+
+                            const dst_min_in_src_tile_px = [2]u32{
+                                @max(dst_min_in_tile_px[0], (dst.start_px[0] + src_min_offset_px[0]) - dst_tile_pos_in_px[0]),
+                                @max(dst_min_in_tile_px[1], (dst.start_px[1] + src_min_offset_px[1]) - dst_tile_pos_in_px[1]),
+                            };
+
+                            // 3. `max[0]`, AKA the right pos:
+                            //     ```ascii-art
+                            //      +--|--+
+                            //      |##|..|
+                            //      |##|..|
+                            //      +--|--+
+                            //     ```
+                            //
+                            // 4. `max[1]`, AKA the bottom pos:
+                            //     ```ascii-art
+                            //      +----+
+                            //      |####|
+                            //      ------
+                            //      |....|
+                            //      +----+
+                            //     ```
+
+                            const src_max_in_tile_px = [2]u32{
+                                @min((src.start_px[0] + max_offset_px[0]) - src_tile_pos_px[0], tile_size[0]),
+                                @min((src.start_px[1] + max_offset_px[1]) - src_tile_pos_px[1], tile_size[1]),
+                            };
+
+                            // We already know the `dst_max_in_tile` in terms of the overall compositing region, but we need to find it in
+                            // terms of this `src` tile.
+                            const src_max_offset_px = [2]u32{
+                                (src_tile_pos_px[0] + src_max_in_tile_px[0]) - src.start_px[0],
+                                (src_tile_pos_px[1] + src_max_in_tile_px[1]) - src.start_px[1],
+                            };
+
+                            const dst_max_in_src_tile_px = [2]u32{
+                                @min(dst_max_in_tile_px[0], (dst.start_px[0] + src_max_offset_px[0]) - dst_tile_pos_in_px[0]),
+                                @min(dst_max_in_tile_px[1], (dst.start_px[1] + src_max_offset_px[1]) - dst_tile_pos_in_px[1]),
+                            };
+
+                            // Finally, go through each pixel and perform the compositing operation
+                            for (dst_tile[dst_min_in_src_tile_px[1]..dst_max_in_src_tile_px[1]], src_tile[src_min_in_tile_px[1]..src_max_in_tile_px[1]]) |*dst_row, src_row| {
+                                for (dst_row[dst_min_in_src_tile_px[0]..dst_max_in_src_tile_px[0]], src_row[src_min_in_tile_px[0]..src_max_in_tile_px[0]]) |*dst_pixel, src_pixel| {
+                                    dst_pixel.* = Pixel.compositeSrcOver(dst_pixel.*, src_pixel);
+                                }
+                            }
                         }
                     }
                 }
@@ -401,14 +700,11 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                 dst.start_px[1] / tile_size[1],
             };
             const max_tile_pos = [2]u32{
-                dst.end_px[0] / tile_size[0],
-                dst.end_px[1] / tile_size[1],
+                (dst.end_px[0] + (tile_size[0] - 1)) / tile_size[0],
+                (dst.end_px[1] + (tile_size[1] - 1)) / tile_size[1],
             };
 
-            const size_in_tiles = [2]u32{
-                dst.size_px[0] / tile_size[0],
-                dst.size_px[1] / tile_size[1],
-            };
+            const size_in_tiles = sizeInTiles(dst.size_px);
 
             for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
                 for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
@@ -425,13 +721,13 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                         dst.start_px[1] -| tile_pos_in_px[1],
                     };
                     const max_in_tile = [2]u32{
-                        (dst.end_px[0] -| tile_pos_in_px[0]) % tile_size[0],
-                        (dst.end_px[1] -| tile_pos_in_px[1]) % tile_size[1],
+                        @min(tile_size[0], (dst.end_px[0] -| tile_pos_in_px[0])),
+                        @min(tile_size[1], (dst.end_px[1] -| tile_pos_in_px[1])),
                     };
 
                     for (min_in_tile[1]..max_in_tile[1]) |y| {
                         for (min_in_tile[0]..max_in_tile[0]) |x| {
-                            const src_pos: [2]i32 = .{
+                            const src_pos: [2]u32 = .{
                                 @intCast(tile_pos_in_px[0] + x - dst.start_px[0]),
                                 @intCast(tile_pos_in_px[1] + y - dst.start_px[1]),
                             };
@@ -555,10 +851,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                 pos[0] / tile_size[0],
                 pos[1] / tile_size[1],
             };
-            const size_in_tiles = [2]u32{
-                this.size_px[0] / tile_size[0],
-                this.size_px[1] / tile_size[1],
-            };
+            const size_in_tiles = sizeInTiles(this.size_px);
 
             const tile_index = tile_pos[1] * size_in_tiles[0] + tile_pos[0];
 
@@ -574,6 +867,157 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             };
         }
     };
+}
+
+test "Tiled ops == Linear ops" {
+    // TODO: replace with fuzz testing in zig 0.14
+    var prng = std.Random.DefaultPrng.init(4724468855559179511);
+
+    const ITERATIONS = 100;
+    for (0..ITERATIONS) |_| {
+        const src_size = [2]u32{
+            prng.random().uintAtMost(u32, 32) + 1,
+            prng.random().uintAtMost(u32, 32) + 1,
+        };
+        const size = [2]u32{
+            prng.random().uintLessThan(u32, 128) + src_size[0],
+            prng.random().uintLessThan(u32, 128) + src_size[1],
+        };
+
+        const linear = try Image(seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        defer linear.free(std.testing.allocator);
+        const tiled = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        defer tiled.free(std.testing.allocator);
+
+        const clear_color = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+
+        linear.clear(clear_color);
+        tiled.clear(clear_color);
+
+        const src_linear = try Image(seizer.color.argb(f32)).alloc(std.testing.allocator, src_size);
+        defer src_linear.free(std.testing.allocator);
+        for (src_linear.pixels[0 .. src_linear.size[0] * src_linear.size[1]]) |*pixel| {
+            pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+                prng.random().float(f32),
+                prng.random().float(f32),
+                prng.random().float(f32),
+                prng.random().float(f32),
+            );
+        }
+
+        for (0..10) |_| {
+            const pos = [2]u32{
+                prng.random().uintAtMost(u32, size[0] - src_size[0]),
+                prng.random().uintAtMost(u32, size[1] - src_size[1]),
+            };
+            linear.slice(pos, src_size).composite(src_linear);
+            tiled.slice(pos, src_size).compositeLinear(src_linear);
+        }
+
+        for (0..size[1]) |y| {
+            for (0..size[0]) |x| {
+                const pos = [2]u32{ @intCast(x), @intCast(y) };
+                try std.testing.expectEqual(linear.getPixel(pos), tiled.getPixel(pos));
+            }
+        }
+    }
+}
+
+test "Tiled composite == compositeLinear" {
+    // TODO: replace with fuzz testing in zig 0.14
+    var prng = std.Random.DefaultPrng.init(1392207985905151498);
+
+    const ITERATIONS = 100;
+    for (0..ITERATIONS) |iteration| {
+        errdefer std.debug.print("iteration = {}\n", .{iteration});
+
+        const src_size = [2]u32{
+            prng.random().uintAtMost(u32, 32) + 1,
+            prng.random().uintAtMost(u32, 32) + 1,
+        };
+        const size = [2]u32{
+            prng.random().uintLessThan(u32, 128) + src_size[0],
+            prng.random().uintLessThan(u32, 128) + src_size[1],
+        };
+
+        const dst_composite_linear = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        defer dst_composite_linear.free(std.testing.allocator);
+        const dst_composite_tiled = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        defer dst_composite_tiled.free(std.testing.allocator);
+
+        const clear_color = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+        errdefer std.debug.print("clear color = ({d:.2}, {d:.2}, {d:.2}, {d:.2})\n", .{
+            clear_color.b,
+            clear_color.g,
+            clear_color.r,
+            clear_color.a,
+        });
+
+        dst_composite_linear.clear(clear_color);
+        dst_composite_tiled.clear(clear_color);
+
+        const src_linear = try Image(seizer.color.argb(f32)).alloc(std.testing.allocator, src_size);
+        defer src_linear.free(std.testing.allocator);
+        const src_tiled = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, src_size);
+        defer src_tiled.free(std.testing.allocator);
+        for (0..src_size[1]) |y| {
+            for (0..src_size[0]) |x| {
+                const pixel = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+                    prng.random().float(f32),
+                    prng.random().float(f32),
+                    prng.random().float(f32),
+                    prng.random().float(f32),
+                );
+                const pos = [2]u32{ @intCast(x), @intCast(y) };
+                src_linear.setPixel(pos, pixel);
+                src_tiled.setPixel(pos, pixel);
+                try std.testing.expectEqual(src_linear.getPixel(pos), src_tiled.getPixel(pos));
+            }
+        }
+
+        for (0..10) |composite_idx| {
+            const pos = [2]u32{
+                prng.random().uintAtMost(u32, size[0] - src_size[0]),
+                prng.random().uintAtMost(u32, size[1] - src_size[1]),
+            };
+            errdefer std.debug.print("composite {} pos = <{}, {}>, size = {}x{}\n", .{ composite_idx, pos[0], pos[1], src_size[0], src_size[1] });
+            dst_composite_linear.slice(pos, src_size).compositeLinear(src_linear);
+            dst_composite_tiled.slice(pos, src_size).composite(src_tiled);
+
+            for (0..size[1]) |y| {
+                for (0..size[0]) |x| {
+                    const check_pos = [2]u32{ @intCast(x), @intCast(y) };
+                    const px_linear = dst_composite_linear.getPixel(check_pos);
+                    const px_tiled = dst_composite_tiled.getPixel(check_pos);
+
+                    errdefer std.debug.print("check_pos = <{}, {}>; linear = ({d:.2}, {d:.2}, {d:.2}, {d:.2}); tiled = ({d:.2}, {d:.2}, {d:.2}, {d:.2})\n", .{
+                        check_pos[0],
+                        check_pos[1],
+                        px_linear.b,
+                        px_linear.g,
+                        px_linear.r,
+                        px_linear.a,
+                        px_tiled.b,
+                        px_tiled.g,
+                        px_tiled.r,
+                        px_tiled.a,
+                    });
+
+                    try std.testing.expectEqual(px_linear, px_tiled);
+                }
+            }
+        }
+    }
 }
 
 const probes = @import("probes");

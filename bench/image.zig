@@ -112,18 +112,18 @@ pub fn main() !void {
     var bench = zbench.Benchmark.init(gpa.allocator(), .{});
     defer bench.deinit();
 
-    try bench.add("copy 640x480 to 640x480", copy_640x480_to_640x480, .{});
-    try bench.add("copy 640x480 to slice of 1280x960", copy_640x480_to_slice_of_1280x960, .{});
-    try bench.add("composite 640x480 to 640x480", composite_640x480_to_640x480, .{});
-    try bench.add("composite 640x480 to slice of 1280x960", composite_640x480_to_slice_of_1280x960, .{});
-    try bench.add("composite 1280x960 to 1280x960", composite_1280x960_to_1280x960, .{});
-    try bench.add("composite 4096 64x64 to 640x480", composite_4096_64x64_to_640x480, .{});
-    try bench.add("composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960, .{});
-    try bench.add("f32 composite 4096 16x16 to 1280x960", composite_4096_16x16_to_1280x960_f32, .{});
-    try bench.add("f32 composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960_f32, .{});
-    try bench.add("f32 16x16 tiled composite 4096 16x16 to 1280x960", composite_4096_16x16_to_1280x960_tiled_f32, .{});
-    try bench.add("f32 64x64 tiled composite 4096 64x64 to 1280x960", composite_4096_64x64_to_1280x960_tiled_f32, .{});
-    try bench.add("tiled composite 64x64 to 1280x960", tiled_composite_4096_64x64_to_1280x960, .{});
+    try bench.add("linear  argb8888            copy    1  640x480 to 640x480", copy_640x480_to_640x480, .{});
+    try bench.add("linear  argb8888            copy    1  640x480 to slice of 1280x960", copy_640x480_to_slice_of_1280x960, .{});
+    try bench.add("linear  argb8888       composite    1  640x480 to 640x480", composite_640x480_to_640x480, .{});
+    try bench.add("linear  argb8888       composite    1  640x480 to slice of 1280x960", composite_640x480_to_slice_of_1280x960, .{});
+    try bench.add("linear  argb8888       composite    1 1280x960 to 1280x960", composite_1280x960_to_1280x960, .{});
+    try bench.add("linear  argb8888       composite 4096   64x64  to 640x480", composite_4096_64x64_to_640x480, .{});
+    try bench.add("linear  argb8888       composite 4096   64x64  to 1280x960", composite_4096_64x64_to_1280x960, .{});
+    try bench.add("linear argb(f32)       composite 4096   16x16  to 1280x960", composite_4096_16x16_to_1280x960_f32, .{});
+    try bench.add("linear argb(f32)       composite 4096   64x64  to 1280x960", composite_4096_64x64_to_1280x960_f32, .{});
+    try bench.add(" tiled argb(f32) compositeLinear 4096   16x16  to 1280x960", composite_4096_16x16_to_1280x960_tiled_f32, .{});
+    try bench.add(" tiled argb(f32) compositeLinear 4096   64x64  to 1280x960", composite_4096_64x64_to_1280x960_tiled_f32, .{});
+    try bench.add(" tiled argb(f32)       composite 4096   64x64 tiled to 1280x960", tiled_composite_4096_64x64_to_1280x960, .{});
 
     try stdout.writeAll("\n");
     try bench.run(stdout);

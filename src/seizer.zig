@@ -65,6 +65,7 @@ pub fn setDeinit(new_deinit_fn: ?seizer.DeinitFn) void {
 comptime {
     if (builtin.is_test) {
         _ = color;
+        _ = image;
     }
 }
 

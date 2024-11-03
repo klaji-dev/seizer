@@ -245,13 +245,13 @@ pub const argb8888 = packed struct(u32) {
             // convert to argb8888 and back because we aren't interested in how shrinking the
             // data into 8-bits reduces precision, just if the u12 algorithm introduces any
             // extra error
-            const dst = argb.fromRGBUnassociatedAlpha(
+            const dst = argb(f64).fromRGBUnassociatedAlpha(
                 prng.random().float(f64),
                 prng.random().float(f64),
                 prng.random().float(f64),
                 prng.random().float(f64),
             ).toArgb8888().toArgb();
-            const src = argb.fromRGBUnassociatedAlpha(
+            const src = argb(f64).fromRGBUnassociatedAlpha(
                 prng.random().float(f64),
                 prng.random().float(f64),
                 prng.random().float(f64),
