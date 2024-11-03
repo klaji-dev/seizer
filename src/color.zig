@@ -77,6 +77,76 @@ pub fn argb(F: type) type {
             };
         }
 
+        pub fn compositeSrcOverVec(
+            comptime L: usize,
+            dst: [L]@This(),
+            src: [L]@This(),
+        ) [L]@This() {
+            var dst_b: [L]F = undefined;
+            var dst_g: [L]F = undefined;
+            var dst_r: [L]F = undefined;
+            var dst_a: [L]F = undefined;
+            for (dst, &dst_b, &dst_g, &dst_r, &dst_a) |px, *b, *g, *r, *a| {
+                b.* = px.b;
+                g.* = px.g;
+                r.* = px.r;
+                a.* = px.a;
+            }
+            var src_b: [L]F = undefined;
+            var src_g: [L]F = undefined;
+            var src_r: [L]F = undefined;
+            var src_a: [L]F = undefined;
+            for (src, &src_b, &src_g, &src_r, &src_a) |px, *b, *g, *r, *a| {
+                b.* = px.b;
+                g.* = px.g;
+                r.* = px.r;
+                a.* = px.a;
+            }
+
+            const src_av: @Vector(L, F) = src_a;
+            const dst_av: @Vector(L, F) = dst_a;
+            const res_a: [L]F = src_av + dst_av * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+
+            const dst_bv: @Vector(L, F) = dst_b;
+            const src_bv: @Vector(L, F) = src_b;
+            const res_b: [L]F = src_bv + dst_bv * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+
+            const dst_gv: @Vector(L, F) = dst_g;
+            const src_gv: @Vector(L, F) = src_g;
+            const res_g: [L]F = src_gv + dst_gv * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+
+            const dst_rv: @Vector(L, F) = dst_r;
+            const src_rv: @Vector(L, F) = src_r;
+            const res_r: [L]F = src_rv + dst_rv * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+
+            var res: [L]@This() = undefined;
+            for (&res, res_b, res_g, res_r, res_a) |*px, b, g, r, a| {
+                px.* = .{ .b = b, .g = g, .r = r, .a = a };
+            }
+            return res;
+        }
+
+        pub fn Vectorized(comptime L: usize) type {
+            return struct {
+                b: @Vector(L, F),
+                g: @Vector(L, F),
+                r: @Vector(L, F),
+                a: @Vector(L, F),
+            };
+        }
+        pub fn compositeSrcOverVecPlanar(
+            comptime L: usize,
+            dst: Vectorized(L),
+            src: Vectorized(L),
+        ) Vectorized(L) {
+            return .{
+                .b = src.b + dst.b * (@as(@Vector(L, F), @splat(1.0)) - src.a),
+                .g = src.g + dst.g * (@as(@Vector(L, F), @splat(1.0)) - src.a),
+                .r = src.r + dst.r * (@as(@Vector(L, F), @splat(1.0)) - src.a),
+                .a = src.a + dst.a * (@as(@Vector(L, F), @splat(1.0)) - src.a),
+            };
+        }
+
         pub fn compositeSrcOver(dst: @This(), src: @This()) @This() {
             return .{
                 .b = src.b + dst.b * (1.0 - src.a),
@@ -95,6 +165,111 @@ pub fn argb(F: type) type {
             };
         }
     };
+}
+
+test "argb(f32).compositeSrcOverVec" {
+    var prng = std.Random.DefaultPrng.init(438626002704109799);
+
+    const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
+
+    var dst_array: [vector_len]argb(f32) = undefined;
+    var src_array: [vector_len]argb(f32) = undefined;
+    var result_array: [vector_len]argb(f32) = undefined;
+    for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
+        dst.* = argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+        src.* = argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+        res.* = dst.compositeSrcOver(src.*);
+    }
+
+    const result_vec: [vector_len]argb(f32) = argb(f32).compositeSrcOverVec(vector_len, dst_array, src_array);
+    try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec);
+}
+
+test "argb(f32).compositeSrcOverVecPlanar" {
+    var prng = std.Random.DefaultPrng.init(438626002704109799);
+
+    const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
+
+    var dst_array: [vector_len]argb(f32) = undefined;
+    var src_array: [vector_len]argb(f32) = undefined;
+    var result_array: [vector_len]argb(f32) = undefined;
+    for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
+        dst.* = argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+        src.* = argb(f32).fromRGBUnassociatedAlpha(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        );
+        res.* = dst.compositeSrcOver(src.*);
+    }
+
+    var dst_b_array: [vector_len]f32 = undefined;
+    var dst_g_array: [vector_len]f32 = undefined;
+    var dst_r_array: [vector_len]f32 = undefined;
+    var dst_a_array: [vector_len]f32 = undefined;
+    for (&dst_b_array, &dst_g_array, &dst_r_array, &dst_a_array, dst_array) |*b, *g, *r, *a, px| {
+        b.* = px.b;
+        g.* = px.g;
+        r.* = px.r;
+        a.* = px.a;
+    }
+    const dst_vec: argb(f32).Vectorized(vector_len) = .{
+        .b = dst_b_array,
+        .g = dst_g_array,
+        .r = dst_r_array,
+        .a = dst_a_array,
+    };
+
+    var src_b_array: [vector_len]f32 = undefined;
+    var src_g_array: [vector_len]f32 = undefined;
+    var src_r_array: [vector_len]f32 = undefined;
+    var src_a_array: [vector_len]f32 = undefined;
+    for (&src_b_array, &src_g_array, &src_r_array, &src_a_array, src_array) |*b, *g, *r, *a, px| {
+        b.* = px.b;
+        g.* = px.g;
+        r.* = px.r;
+        a.* = px.a;
+    }
+    const src_vec: argb(f32).Vectorized(vector_len) = .{
+        .b = src_b_array,
+        .g = src_g_array,
+        .r = src_r_array,
+        .a = src_a_array,
+    };
+
+    const result_vec: argb(f32).Vectorized(vector_len) = argb(f32).compositeSrcOverVecPlanar(vector_len, dst_vec, src_vec);
+
+    var result_vec_array: [vector_len]argb(f32) = undefined;
+    const result_b_array: [vector_len]f32 = result_vec.b;
+    const result_g_array: [vector_len]f32 = result_vec.g;
+    const result_r_array: [vector_len]f32 = result_vec.r;
+    const result_a_array: [vector_len]f32 = result_vec.a;
+    for (&result_vec_array, result_b_array, result_g_array, result_r_array, result_a_array) |*px, b, g, r, a| {
+        px.* = .{
+            .b = b,
+            .g = g,
+            .r = r,
+            .a = a,
+        };
+    }
+
+    try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec_array);
 }
 
 /// 3 8-bit sRGB encoded colors premultiplied with an linear 8-bit alpha component.
