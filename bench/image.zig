@@ -1,294 +1,185 @@
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var prng = std.Random.DefaultPrng.init(2958574218529385335);
+var prng: std.Random.DefaultPrng = undefined;
 
-var sample_64x64_image: ImageArgb8888 = undefined;
-var sample_640x480_image: ImageArgb8888 = undefined;
-var sample_1280x960_image: ImageArgb8888 = undefined;
+var src_linear_argb8888: ImageArgb8888 = undefined;
+var src_linear_argbf32: ImageArgbF32 = undefined;
+var src_tiled_argbf32: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)) = undefined;
 
-var sample_16x16_image_f32: ImageArgbF32 = undefined;
-var sample_64x64_image_f32: ImageArgbF32 = undefined;
-var sample_640x480_image_f32: ImageArgbF32 = undefined;
-var sample_1280x960_image_f32: ImageArgbF32 = undefined;
+var dst_linear_argb8888: ImageArgb8888 = undefined;
+var dst_linear_argbf32: ImageArgbF32 = undefined;
+var dst_tiled_argbf32: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)) = undefined;
 
-var sample_64x64_image_tiled: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)) = undefined;
+var ops_pos: []const [2]u32 = &.{};
 
 pub fn main() !void {
     defer _ = gpa.deinit();
+    const stdout = std.io.getStdOut().writer();
 
-    // init argb8888 image samples
-    sample_64x64_image = try ImageArgb8888.alloc(gpa.allocator(), .{ 64, 64 });
-    defer sample_64x64_image.free(gpa.allocator());
-    for (sample_64x64_image.pixels[0 .. sample_64x64_image.size[0] * sample_64x64_image.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f64).fromRGBUnassociatedAlpha(
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-        ).toArgb8888();
-    }
+    var src_size = [2]u32{ 64, 64 };
+    var dst_size = [2]u32{ 1280, 800 };
+    var seed: u64 = 2958574218529385335;
+    var num_operations: u32 = 4096;
 
-    sample_640x480_image = try ImageArgb8888.alloc(gpa.allocator(), .{ 640, 480 });
-    defer sample_640x480_image.free(gpa.allocator());
-    for (sample_640x480_image.pixels[0 .. sample_640x480_image.size[0] * sample_640x480_image.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f64).fromRGBUnassociatedAlpha(
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-        ).toArgb8888();
-    }
-
-    sample_1280x960_image = try ImageArgb8888.alloc(gpa.allocator(), .{ 1280, 960 });
-    defer sample_1280x960_image.free(gpa.allocator());
-    for (sample_1280x960_image.pixels[0 .. sample_1280x960_image.size[0] * sample_1280x960_image.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f64).fromRGBUnassociatedAlpha(
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-            prng.random().float(f64),
-        ).toArgb8888();
-    }
-
-    // init argb4xf32 image samples
-    sample_16x16_image_f32 = try ImageArgbF32.alloc(gpa.allocator(), .{ 16, 16 });
-    defer sample_16x16_image_f32.free(gpa.allocator());
-    for (sample_16x16_image_f32.pixels[0 .. sample_16x16_image_f32.size[0] * sample_16x16_image_f32.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-    }
-
-    sample_64x64_image_f32 = try ImageArgbF32.alloc(gpa.allocator(), .{ 64, 64 });
-    defer sample_64x64_image_f32.free(gpa.allocator());
-    for (sample_64x64_image_f32.pixels[0 .. sample_64x64_image_f32.size[0] * sample_64x64_image_f32.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-    }
-
-    sample_640x480_image_f32 = try ImageArgbF32.alloc(gpa.allocator(), .{ 640, 480 });
-    defer sample_640x480_image_f32.free(gpa.allocator());
-    for (sample_640x480_image_f32.pixels[0 .. sample_640x480_image_f32.size[0] * sample_640x480_image_f32.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-    }
-
-    sample_1280x960_image_f32 = try ImageArgbF32.alloc(gpa.allocator(), .{ 1280, 960 });
-    defer sample_1280x960_image_f32.free(gpa.allocator());
-    for (sample_1280x960_image_f32.pixels[0 .. sample_1280x960_image_f32.size[0] * sample_1280x960_image_f32.size[1]]) |*pixel| {
-        pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-    }
-
-    // init argb4xf32 tiled image samples
-    sample_64x64_image_tiled = try seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(gpa.allocator(), .{ 64, 64 });
-    defer sample_64x64_image_tiled.free(gpa.allocator());
-    for (0..sample_64x64_image_tiled.size_px[1]) |y| {
-        for (0..sample_64x64_image_tiled.size_px[0]) |x| {
-            sample_64x64_image_tiled.setPixel(.{ @intCast(x), @intCast(y) }, seizer.color.argb(f32).fromRGBUnassociatedAlpha(
-                prng.random().float(f32),
-                prng.random().float(f32),
-                prng.random().float(f32),
-                prng.random().float(f32),
-            ));
+    var arg_iter = try std.process.argsWithAllocator(gpa.allocator());
+    defer arg_iter.deinit();
+    _ = arg_iter.skip();
+    while (arg_iter.next()) |flag| {
+        if (std.mem.eql(u8, flag, "--src-width")) {
+            const src_width_text = arg_iter.next() orelse {
+                std.debug.print("flag `--src-width` missing argument\n", .{});
+                std.process.exit(1);
+            };
+            src_size[0] = try std.fmt.parseInt(u32, src_width_text, 0);
+        } else if (std.mem.eql(u8, flag, "--src-height")) {
+            const src_height_text = arg_iter.next() orelse {
+                std.debug.print("flag `--src-height` missing argument\n", .{});
+                std.process.exit(1);
+            };
+            src_size[1] = try std.fmt.parseInt(u32, src_height_text, 0);
+        } else if (std.mem.eql(u8, flag, "--dst-width")) {
+            const dst_width_text = arg_iter.next() orelse {
+                std.debug.print("flag `--dst-width` missing argument\n", .{});
+                std.process.exit(1);
+            };
+            dst_size[0] = try std.fmt.parseInt(u32, dst_width_text, 0);
+        } else if (std.mem.eql(u8, flag, "--dst-height")) {
+            const dst_height_text = arg_iter.next() orelse {
+                std.debug.print("flag `--dst-height` missing argument\n", .{});
+                std.process.exit(1);
+            };
+            dst_size[1] = try std.fmt.parseInt(u32, dst_height_text, 0);
+        } else if (std.mem.eql(u8, flag, "--seed")) {
+            const seed_text = arg_iter.next() orelse {
+                std.debug.print("flag `--seed` missing argument\n", .{});
+                std.process.exit(1);
+            };
+            seed = try std.fmt.parseInt(u64, seed_text, 0);
+        } else if (std.mem.eql(u8, flag, "--num-ops")) {
+            const num_ops_text = arg_iter.next() orelse {
+                std.debug.print("flag `--num-ops` missing argument\n", .{});
+                std.process.exit(1);
+            };
+            num_operations = try std.fmt.parseInt(u32, num_ops_text, 0);
+        } else {
+            std.debug.print("unknown flag \"{}\"\n", .{std.zig.fmtEscapes(flag)});
+            std.process.exit(1);
         }
     }
 
-    const stdout = std.io.getStdOut().writer();
-    var bench = zbench.Benchmark.init(gpa.allocator(), .{});
+    try stdout.print(
+        \\seed = {}
+        \\dst_size = <{}, {}>
+        \\src_size = <{}, {}>
+        \\num_operations = {}
+        \\
+    ,
+        .{ seed, dst_size[0], dst_size[1], src_size[0], src_size[1], num_operations },
+    );
+
+    prng = std.Random.DefaultPrng.init(seed);
+
+    // init operation positions
+    const ops_pos_buffer = try gpa.allocator().alloc([2]u32, num_operations);
+    for (ops_pos_buffer) |*pos| {
+        pos.* = [2]u32{
+            prng.random().uintLessThan(u32, dst_size[0] - src_size[0]),
+            prng.random().uintLessThan(u32, dst_size[1] - src_size[1]),
+        };
+    }
+    ops_pos = ops_pos_buffer;
+
+    // init src images
+    src_linear_argb8888 = try ImageArgb8888.alloc(gpa.allocator(), src_size);
+    defer src_linear_argb8888.free(gpa.allocator());
+
+    src_linear_argbf32 = try ImageArgbF32.alloc(gpa.allocator(), src_size);
+    defer src_linear_argbf32.free(gpa.allocator());
+
+    src_tiled_argbf32 = try seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(gpa.allocator(), src_size);
+    defer src_tiled_argbf32.free(gpa.allocator());
+
+    for (0..src_size[1]) |y| {
+        for (0..src_size[0]) |x| {
+            const pos = [2]u32{ @intCast(x), @intCast(y) };
+            const pixel = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+                prng.random().float(f32),
+                prng.random().float(f32),
+                prng.random().float(f32),
+                prng.random().float(f32),
+            );
+
+            src_linear_argb8888.setPixel(pos, pixel.toArgb8888());
+            src_linear_argbf32.setPixel(pos, pixel);
+            src_tiled_argbf32.setPixel(pos, pixel);
+        }
+    }
+
+    // init dst images
+    dst_linear_argb8888 = try ImageArgb8888.alloc(gpa.allocator(), dst_size);
+    defer dst_linear_argb8888.free(gpa.allocator());
+
+    dst_linear_argbf32 = try ImageArgbF32.alloc(gpa.allocator(), dst_size);
+    defer dst_linear_argbf32.free(gpa.allocator());
+
+    dst_tiled_argbf32 = try seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(gpa.allocator(), dst_size);
+    defer dst_tiled_argbf32.free(gpa.allocator());
+
+    // create benchmarks
+    var bench = zbench.Benchmark.init(gpa.allocator(), .{
+        .hooks = .{
+            .before_each = clearDstImages,
+        },
+    });
     defer bench.deinit();
 
-    try bench.add("linear  argb8888            copy    1  640x480 to 640x480", copy_640x480_to_640x480, .{});
-    try bench.add("linear  argb8888            copy    1  640x480 to slice of 1280x960", copy_640x480_to_slice_of_1280x960, .{});
-    try bench.add("linear  argb8888       composite    1  640x480 to 640x480", composite_640x480_to_640x480, .{});
-    try bench.add("linear  argb8888       composite    1  640x480 to slice of 1280x960", composite_640x480_to_slice_of_1280x960, .{});
-    try bench.add("linear  argb8888       composite    1 1280x960 to 1280x960", composite_1280x960_to_1280x960, .{});
-    try bench.add("linear  argb8888       composite 4096   64x64  to 640x480", composite_4096_64x64_to_640x480, .{});
-    try bench.add("linear  argb8888       composite 4096   64x64  to 1280x960", composite_4096_64x64_to_1280x960, .{});
-    try bench.add("linear argb(f32)       composite 4096   16x16  to 1280x960", composite_4096_16x16_to_1280x960_f32, .{});
-    try bench.add("linear argb(f32)       composite 4096   64x64  to 1280x960", composite_4096_64x64_to_1280x960_f32, .{});
-    try bench.add(" tiled argb(f32) compositeLinear 4096   16x16  to 1280x960", composite_4096_16x16_to_1280x960_tiled_f32, .{});
-    try bench.add(" tiled argb(f32) compositeLinear 4096   64x64  to 1280x960", composite_4096_64x64_to_1280x960_tiled_f32, .{});
-    try bench.add(" tiled argb(f32)       composite 4096   64x64 tiled to 1280x960", tiled_composite_4096_64x64_to_1280x960, .{});
+    try bench.add("copy Linear(argb8888)", linearArgb8888Copy, .{});
+    try bench.add("composite Linear(argb8888)", linearArgb8888Composite, .{});
+    try bench.add("composite Linear(argb(f32))", linearArgbF32Composite, .{});
+    try bench.add("compositeLinear Tiled(.{16,16},argb(f32))", tiled16x16ArgbF32CompositeLinear, .{});
+    try bench.add("composite Tiled(.{16,16},argb(f32))", tiled16x16ArgbF32Composite, .{});
 
     try stdout.writeAll("\n");
     try bench.run(stdout);
 }
 
-fn copy_640x480_to_640x480(allocator: std.mem.Allocator) void {
-    const new_640x480_image = ImageArgb8888.alloc(allocator, .{ 640, 480 }) catch unreachable;
-    defer new_640x480_image.free(allocator);
-
-    new_640x480_image.copy(sample_640x480_image);
-    std.mem.doNotOptimizeAway(new_640x480_image.pixels);
+fn clearDstImages() void {
+    dst_linear_argb8888.clear(seizer.color.argb8888.BLACK);
+    dst_linear_argbf32.clear(seizer.color.argb(f32).BLACK);
+    dst_tiled_argbf32.clear(seizer.color.argb(f32).BLACK);
 }
 
-fn copy_640x480_to_slice_of_1280x960(allocator: std.mem.Allocator) void {
-    const new_1280x960_image = ImageArgb8888.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer new_1280x960_image.free(allocator);
-
-    const pos = [2]u32{
-        prng.random().uintAtMostBiased(u32, 640),
-        prng.random().uintAtMostBiased(u32, 480),
-    };
-
-    new_1280x960_image.slice(pos, .{ 640, 480 }).copy(sample_640x480_image);
-    std.mem.doNotOptimizeAway(new_1280x960_image.pixels);
-}
-
-fn composite_640x480_to_640x480(allocator: std.mem.Allocator) void {
-    const new_640x480_image = ImageArgb8888.alloc(allocator, .{ 640, 480 }) catch unreachable;
-    defer new_640x480_image.free(allocator);
-
-    new_640x480_image.composite(sample_640x480_image);
-    std.mem.doNotOptimizeAway(new_640x480_image.pixels);
-}
-
-fn composite_640x480_to_slice_of_1280x960(allocator: std.mem.Allocator) void {
-    const new_1280x960_image = ImageArgb8888.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer new_1280x960_image.free(allocator);
-
-    const pos = [2]u32{
-        prng.random().uintAtMostBiased(u32, 640),
-        prng.random().uintAtMostBiased(u32, 480),
-    };
-
-    new_1280x960_image.slice(pos, .{ 640, 480 }).composite(sample_640x480_image);
-    std.mem.doNotOptimizeAway(new_1280x960_image.pixels);
-}
-
-fn composite_1280x960_to_1280x960(allocator: std.mem.Allocator) void {
-    const new_1280x960_image = ImageArgb8888.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer new_1280x960_image.free(allocator);
-
-    new_1280x960_image.composite(sample_1280x960_image);
-    std.mem.doNotOptimizeAway(new_1280x960_image.pixels);
-}
-
-fn composite_4096_64x64_to_640x480(allocator: std.mem.Allocator) void {
-    const framebuffer = ImageArgb8888.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-    @memset(framebuffer.pixels[0 .. framebuffer.size[0] * framebuffer.size[1]], seizer.color.argb8888.BLACK);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size[0] - sample_64x64_image.size[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size[1] - sample_64x64_image.size[1]),
-        };
-
-        framebuffer.slice(pos, sample_64x64_image.size).composite(sample_64x64_image);
-
-        std.mem.doNotOptimizeAway(framebuffer.pixels);
+fn linearArgb8888Copy(_: std.mem.Allocator) void {
+    for (ops_pos) |pos| {
+        dst_linear_argb8888.slice(pos, src_linear_argb8888.size).copy(src_linear_argb8888);
+        std.mem.doNotOptimizeAway(dst_linear_argb8888.pixels);
     }
 }
 
-fn composite_4096_64x64_to_1280x960(allocator: std.mem.Allocator) void {
-    const framebuffer = ImageArgb8888.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size[0] - sample_64x64_image.size[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size[1] - sample_64x64_image.size[1]),
-        };
-
-        framebuffer.slice(pos, sample_64x64_image.size).composite(sample_64x64_image);
-
-        std.mem.doNotOptimizeAway(framebuffer.pixels);
+fn linearArgb8888Composite(_: std.mem.Allocator) void {
+    for (ops_pos) |pos| {
+        dst_linear_argb8888.slice(pos, src_linear_argb8888.size).composite(src_linear_argb8888);
+        std.mem.doNotOptimizeAway(dst_linear_argb8888.pixels);
     }
 }
 
-fn composite_4096_16x16_to_1280x960_f32(allocator: std.mem.Allocator) void {
-    const framebuffer = ImageArgbF32.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size[0] - sample_16x16_image_f32.size[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size[1] - sample_16x16_image_f32.size[1]),
-        };
-
-        framebuffer.slice(pos, sample_16x16_image_f32.size).composite(sample_16x16_image_f32);
-
-        std.mem.doNotOptimizeAway(framebuffer.pixels);
+fn linearArgbF32Composite(_: std.mem.Allocator) void {
+    for (ops_pos) |pos| {
+        dst_linear_argbf32.slice(pos, src_linear_argbf32.size).composite(src_linear_argbf32);
+        std.mem.doNotOptimizeAway(dst_linear_argbf32.pixels);
     }
 }
 
-fn composite_4096_64x64_to_1280x960_f32(allocator: std.mem.Allocator) void {
-    const framebuffer = ImageArgbF32.alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size[0] - sample_64x64_image_f32.size[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size[1] - sample_64x64_image_f32.size[1]),
-        };
-
-        framebuffer.slice(pos, sample_64x64_image_f32.size).composite(sample_64x64_image_f32);
-
-        std.mem.doNotOptimizeAway(framebuffer.pixels);
+fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
+    for (ops_pos) |pos| {
+        dst_tiled_argbf32.slice(pos, src_linear_argbf32.size).compositeLinear(src_linear_argbf32);
+        std.mem.doNotOptimizeAway(dst_tiled_argbf32.tiles);
     }
 }
 
-fn composite_4096_16x16_to_1280x960_tiled_f32(allocator: std.mem.Allocator) void {
-    const framebuffer = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size_px[0] - sample_16x16_image_f32.size[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size_px[1] - sample_16x16_image_f32.size[1]),
-        };
-
-        framebuffer.slice(pos, sample_16x16_image_f32.size).compositeLinear(sample_16x16_image_f32);
-
-        std.mem.doNotOptimizeAway(framebuffer.tiles);
-    }
-}
-
-fn composite_4096_64x64_to_1280x960_tiled_f32(allocator: std.mem.Allocator) void {
-    const framebuffer = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size_px[0] - sample_64x64_image_f32.size[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size_px[1] - sample_64x64_image_f32.size[1]),
-        };
-
-        framebuffer.slice(pos, sample_64x64_image_f32.size).compositeLinear(sample_64x64_image_f32);
-
-        std.mem.doNotOptimizeAway(framebuffer.tiles);
-    }
-}
-
-fn tiled_composite_4096_64x64_to_1280x960(allocator: std.mem.Allocator) void {
-    const framebuffer = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(allocator, .{ 1280, 960 }) catch unreachable;
-    defer framebuffer.free(allocator);
-
-    for (0..4096) |_| {
-        const pos = [2]u32{
-            prng.random().uintAtMostBiased(u32, framebuffer.size_px[0] - sample_64x64_image_tiled.size_px[0]),
-            prng.random().uintAtMostBiased(u32, framebuffer.size_px[1] - sample_64x64_image_tiled.size_px[1]),
-        };
-
-        framebuffer.slice(pos, sample_64x64_image_tiled.size_px).composite(sample_64x64_image_tiled);
-
-        std.mem.doNotOptimizeAway(framebuffer.tiles);
+fn tiled16x16ArgbF32Composite(_: std.mem.Allocator) void {
+    for (ops_pos) |pos| {
+        dst_tiled_argbf32.slice(pos, src_tiled_argbf32.size_px).composite(src_tiled_argbf32);
+        std.mem.doNotOptimizeAway(dst_tiled_argbf32.tiles);
     }
 }
 

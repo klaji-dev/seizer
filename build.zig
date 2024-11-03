@@ -190,6 +190,9 @@ pub fn build(b: *Builder) !void {
     bench_image_exe.root_module.addImport("seizer", module);
     bench_image_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
     const run_bench_image_exe = b.addRunArtifact(bench_image_exe);
+    if (b.args) |args| {
+        run_bench_image_exe.addArgs(args);
+    }
 
     const bench_image_step = b.step("bench-image", "Run image benchmarks");
     bench_image_step.dependOn(&run_bench_image_exe.step);
