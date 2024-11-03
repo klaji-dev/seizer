@@ -332,7 +332,64 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             };
         }
 
-        pub fn composite(dst: @This(), src: Image(Pixel)) void {
+        pub fn composite(dst: @This(), src: @This()) void {
+            const dst_size = [2]u32{
+                dst.end_px[0] - dst.start_px[0],
+                dst.end_px[1] - dst.start_px[1],
+            };
+            const src_size = [2]u32{
+                src.end_px[0] - src.start_px[0],
+                src.end_px[1] - src.start_px[1],
+            };
+            std.debug.assert(dst_size[0] == src_size[0] and dst_size[1] == src_size[1]);
+
+            const min_tile_pos = [2]u32{
+                dst.start_px[0] / tile_size[0],
+                dst.start_px[1] / tile_size[1],
+            };
+            const max_tile_pos = [2]u32{
+                dst.end_px[0] / tile_size[0],
+                dst.end_px[1] / tile_size[1],
+            };
+
+            const size_in_tiles = [2]u32{
+                dst.size_px[0] / tile_size[0],
+                dst.size_px[1] / tile_size[1],
+            };
+
+            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
+                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
+                    const tile_index = tile_y * size_in_tiles[0] + tile_x;
+                    const tile = &dst.tiles[tile_index];
+
+                    const tile_pos_in_px = [2]u32{
+                        @intCast(tile_x * tile_size[0]),
+                        @intCast(tile_y * tile_size[1]),
+                    };
+
+                    const min_in_tile = [2]u32{
+                        dst.start_px[0] -| tile_pos_in_px[0],
+                        dst.start_px[1] -| tile_pos_in_px[1],
+                    };
+                    const max_in_tile = [2]u32{
+                        (dst.end_px[0] -| tile_pos_in_px[0]) % tile_size[0],
+                        (dst.end_px[1] -| tile_pos_in_px[1]) % tile_size[1],
+                    };
+
+                    for (min_in_tile[1]..max_in_tile[1]) |y| {
+                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                            const src_pos: [2]u32 = .{
+                                @intCast(tile_pos_in_px[0] + x - dst.start_px[0]),
+                                @intCast(tile_pos_in_px[1] + y - dst.start_px[1]),
+                            };
+                            tile[y][x] = Pixel.compositeSrcOver(tile[y][x], src.getPixel(src_pos));
+                        }
+                    }
+                }
+            }
+        }
+
+        pub fn compositeLinear(dst: @This(), src: Image(Pixel)) void {
             const dst_size = [2]u32{
                 dst.end_px[0] - dst.start_px[0],
                 dst.end_px[1] - dst.start_px[1],
@@ -464,7 +521,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
-        pub fn setPixel(this: @This(), offset: [2]i32, color: Pixel) void {
+        pub fn setPixel(this: @This(), offset: [2]u32, color: Pixel) void {
             const tile_pos = this.tilePosFromOffset(offset);
 
             const tile = &this.tiles[tile_pos.index];
@@ -472,7 +529,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             tile[tile_pos.pos_in_tile[1]][tile_pos.pos_in_tile[0]] = color;
         }
 
-        pub fn getPixel(this: @This(), offset: [2]i32) Pixel {
+        pub fn getPixel(this: @This(), offset: [2]u32) Pixel {
             const tile_pos = this.tilePosFromOffset(offset);
 
             const tile = &this.tiles[tile_pos.index];
@@ -503,11 +560,11 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                 this.size_px[1] / tile_size[1],
             };
 
-            const tile_index = tile_pos[1] * size_in_tiles + tile_pos[0];
+            const tile_index = tile_pos[1] * size_in_tiles[0] + tile_pos[0];
 
-            const pos_in_tile = [2]u32{
-                pos[0] % tile_size[0],
-                pos[1] % tile_size[1],
+            const pos_in_tile = [2]u8{
+                @intCast(pos[0] % tile_size[0]),
+                @intCast(pos[1] % tile_size[1]),
             };
 
             return TilePos{
