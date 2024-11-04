@@ -738,6 +738,56 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
+        pub fn compositeZOrder(dst: @This(), src: ZOrdered(Pixel)) void {
+            const dst_size = [2]u32{
+                dst.end_px[0] - dst.start_px[0],
+                dst.end_px[1] - dst.start_px[1],
+            };
+            std.debug.assert(dst_size[0] == src.size[0] and dst_size[1] == src.size[1]);
+
+            const min_tile_pos = [2]u32{
+                dst.start_px[0] / tile_size[0],
+                dst.start_px[1] / tile_size[1],
+            };
+            const max_tile_pos = [2]u32{
+                (dst.end_px[0] + (tile_size[0] - 1)) / tile_size[0],
+                (dst.end_px[1] + (tile_size[1] - 1)) / tile_size[1],
+            };
+
+            const size_in_tiles = sizeInTiles(dst.size_px);
+
+            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
+                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
+                    const tile_index = tile_y * size_in_tiles[0] + tile_x;
+                    const tile = &dst.tiles[tile_index];
+
+                    const tile_pos_in_px = [2]u32{
+                        @intCast(tile_x * tile_size[0]),
+                        @intCast(tile_y * tile_size[1]),
+                    };
+
+                    const min_in_tile = [2]u32{
+                        dst.start_px[0] -| tile_pos_in_px[0],
+                        dst.start_px[1] -| tile_pos_in_px[1],
+                    };
+                    const max_in_tile = [2]u32{
+                        @min(tile_size[0], (dst.end_px[0] -| tile_pos_in_px[0])),
+                        @min(tile_size[1], (dst.end_px[1] -| tile_pos_in_px[1])),
+                    };
+
+                    for (min_in_tile[1]..max_in_tile[1]) |y| {
+                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                            const src_pos: [2]u32 = .{
+                                @intCast(tile_pos_in_px[0] + x - dst.start_px[0]),
+                                @intCast(tile_pos_in_px[1] + y - dst.start_px[1]),
+                            };
+                            tile[y][x] = Pixel.compositeSrcOver(tile[y][x], src.getPixel(src_pos));
+                        }
+                    }
+                }
+            }
+        }
+
         pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
             const this_size = [2]u32{
                 this.end_px[0] - this.start_px[0],
@@ -1094,6 +1144,215 @@ pub fn ZOrdered(Pixel: type) type {
             std.debug.assert(this.start_px[0] + pos[0] < this.size[0] and this.start_px[1] + pos[1] < this.size[1]);
             const index = pixelIndex(.{ @intCast(pos[0]), @intCast(pos[1]) });
             return this.pixels[index];
+        }
+    };
+}
+
+/// Pixel components are stored in separate arrays
+pub fn Planar(Pixel: type) type {
+    std.debug.assert(@hasDecl(Pixel, "fromArgb8888"));
+    std.debug.assert(@hasDecl(Pixel, "toArgb8888"));
+    std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
+    std.debug.assert(@hasDecl(Pixel, "compositeSrcOverVecPlanar"));
+    std.debug.assert(@hasDecl(Pixel, "SUGGESTED_VECTOR_LEN"));
+
+    const Components = @typeInfo(Pixel).Struct.fields;
+    const N = Components.len;
+    const component_pointer_fields = blk: {
+        var pointer_fields: [N]std.builtin.Type.StructField = undefined;
+        for (&pointer_fields, Components) |*ptr_field, component| {
+            ptr_field.* = .{
+                .name = component.name,
+                .type = [*]component.type,
+                .default_value = null,
+                .is_comptime = component.is_comptime,
+                .alignment = @alignOf([*]component.type),
+            };
+        }
+        break :blk pointer_fields;
+    };
+    const COMPONENT_SIZES = blk: {
+        var sizes: [N]usize = undefined;
+        for (&sizes, Components) |*s, component| {
+            s.* = @sizeOf(component.type);
+        }
+        break :blk sizes;
+    };
+    const COMPONENT_SIZE_TOTAL = blk: {
+        var total: usize = 0;
+        for (COMPONENT_SIZES) |size| {
+            total += size;
+        }
+        break :blk total;
+    };
+
+    return struct {
+        pixels: [*]u8,
+        size: [2]u32,
+        start_px: [2]u32,
+        end_px: [2]u32,
+
+        pub const ComponentPointers = @Type(.{ .Struct = .{
+            .layout = .auto,
+            .backing_integer = null,
+            .decls = &.{},
+            .is_tuple = false,
+            .fields = &component_pointer_fields,
+        } });
+
+        pub fn alloc(allocator: std.mem.Allocator, size: [2]u32) !@This() {
+            const pixels = try allocator.alloc(u8, size[0] * size[1] * COMPONENT_SIZE_TOTAL);
+            errdefer allocator.free(pixels);
+
+            return .{
+                .pixels = pixels.ptr,
+                .size = size,
+                .start_px = .{ 0, 0 },
+                .end_px = size,
+            };
+        }
+
+        pub fn clear(this: @This(), pixel: Pixel) void {
+            std.debug.assert(this.start_px[0] == 0 and this.start_px[1] == 0);
+            std.debug.assert(this.end_px[0] == this.size[0] and this.end_px[1] == this.size[1]);
+
+            const planes = this.componentPointers();
+
+            const plane_len = this.size[0] * this.size[1];
+            inline for (Components) |component| {
+                @memset(@field(planes, component.name)[0..plane_len], @field(pixel, component.name));
+            }
+        }
+
+        pub fn free(this: @This(), allocator: std.mem.Allocator) void {
+            std.debug.assert(this.start_px[0] == 0 and this.start_px[1] == 0);
+            std.debug.assert(this.end_px[0] == this.size[0] and this.end_px[1] == this.size[1]);
+            allocator.free(this.pixels[0 .. this.size[0] * this.size[1]]);
+        }
+
+        pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) @This() {
+            const new_start = [2]u32{
+                this.start_px[0] + offset[0],
+                this.start_px[1] + offset[1],
+            };
+            const new_end = [2]u32{
+                new_start[0] + size[0],
+                new_start[1] + size[1],
+            };
+            std.debug.assert(new_start[0] <= this.size[0] and new_start[1] <= this.size[1]);
+            std.debug.assert(new_end[0] <= this.size[0] and new_end[1] <= this.size[1]);
+
+            return .{
+                .pixels = this.pixels,
+                .size = this.size,
+                .start_px = new_start,
+                .end_px = new_end,
+            };
+        }
+
+        fn pixelIndex(this: @This(), pos: [2]u32) usize {
+            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
+            return pos[1] * this.size[0] + pos[0];
+        }
+
+        fn componentPointers(this: @This()) ComponentPointers {
+            const plane_len = this.size[0] * this.size[1];
+
+            var offset: usize = 0;
+            var result: ComponentPointers = undefined;
+            inline for (component_pointer_fields, COMPONENT_SIZES) |ptr_field_info, size| {
+                @field(result, ptr_field_info.name) = @ptrCast(@alignCast(this.pixels[offset..]));
+                offset += plane_len * size;
+            }
+
+            return result;
+        }
+
+        pub fn setPixel(this: @This(), offset: [2]u32, color: Pixel) void {
+            const pos = [2]u32{ this.start_px[0] + offset[0], this.start_px[1] + offset[1] };
+            const index = this.pixelIndex(pos);
+
+            const planes = this.componentPointers();
+
+            inline for (Components) |component| {
+                @field(planes, component.name)[index] = @field(color, component.name);
+            }
+        }
+
+        pub fn getPixel(this: @This(), offset: [2]u32) Pixel {
+            const pos = [2]u32{ this.start_px[0] + offset[0], this.start_px[1] + offset[1] };
+            const index = this.pixelIndex(pos);
+
+            const planes = this.componentPointers();
+
+            var result: Pixel = undefined;
+            inline for (Components) |component| {
+                @field(result, component.name) = @field(planes, component.name)[index];
+            }
+        }
+
+        pub fn composite(dst: @This(), src: @This()) void {
+            const dst_size = [2]u32{
+                dst.end_px[0] - dst.start_px[0],
+                dst.end_px[1] - dst.start_px[1],
+            };
+            const src_size = [2]u32{
+                src.end_px[0] - src.start_px[0],
+                src.end_px[1] - src.start_px[1],
+            };
+            std.debug.assert(dst_size[0] == src_size[0] and dst_size[1] == src_size[1]);
+
+            const dst_planes = dst.componentPointers();
+            const src_planes = src.componentPointers();
+
+            for (dst.start_px[1]..dst.end_px[1], src.start_px[1]..src.end_px[1]) |dst_y, src_y| {
+                var offset_x: u32 = 0;
+                while (offset_x + Pixel.SUGGESTED_VECTOR_LEN < dst_size[0]) : (offset_x += Pixel.SUGGESTED_VECTOR_LEN) {
+                    const dst_index = dst.pixelIndex(.{ @intCast(dst.start_px[0] + offset_x), @intCast(dst_y) });
+                    const src_index = src.pixelIndex(.{ @intCast(src.start_px[0] + offset_x), @intCast(src_y) });
+
+                    var dst_vec: Pixel.Vectorized(Pixel.SUGGESTED_VECTOR_LEN) = undefined;
+                    inline for (Components) |component| {
+                        @field(dst_vec, component.name) = @field(dst_planes, component.name)[dst_index .. dst_index + Pixel.SUGGESTED_VECTOR_LEN][0..Pixel.SUGGESTED_VECTOR_LEN].*;
+                    }
+
+                    var src_vec: Pixel.Vectorized(Pixel.SUGGESTED_VECTOR_LEN) = undefined;
+                    inline for (Components) |component| {
+                        @field(src_vec, component.name) = @field(src_planes, component.name)[src_index .. src_index + Pixel.SUGGESTED_VECTOR_LEN][0..Pixel.SUGGESTED_VECTOR_LEN].*;
+                    }
+
+                    const result_vec = Pixel.compositeSrcOverVecPlanar(
+                        Pixel.SUGGESTED_VECTOR_LEN,
+                        dst_vec,
+                        src_vec,
+                    );
+
+                    inline for (Components) |component| {
+                        @field(dst_planes, component.name)[dst_index .. dst_index + Pixel.SUGGESTED_VECTOR_LEN][0..Pixel.SUGGESTED_VECTOR_LEN].* = @field(result_vec, component.name);
+                    }
+                }
+
+                for (dst.start_px[0] + offset_x..dst.end_px[0], src.start_px[0] + offset_x..src.end_px[0]) |dst_x, src_x| {
+                    const dst_index = dst.pixelIndex(.{ @intCast(dst_x), @intCast(dst_y) });
+                    const src_index = src.pixelIndex(.{ @intCast(src_x), @intCast(src_y) });
+
+                    var dst_px: Pixel = undefined;
+                    inline for (Components) |component| {
+                        @field(dst_px, component.name) = @field(dst_planes, component.name)[dst_index];
+                    }
+
+                    var src_px: Pixel = undefined;
+                    inline for (Components) |component| {
+                        @field(src_px, component.name) = @field(src_planes, component.name)[src_index];
+                    }
+
+                    const result_px = Pixel.compositeSrcOver(dst_px, src_px);
+
+                    inline for (Components) |component| {
+                        @field(dst_planes, component.name)[dst_index] = @field(result_px, component.name);
+                    }
+                }
+            }
         }
     };
 }

@@ -126,6 +126,7 @@ pub fn argb(F: type) type {
             return res;
         }
 
+        pub const SUGGESTED_VECTOR_LEN = std.simd.suggestVectorLength(F) orelse 16;
         pub fn Vectorized(comptime L: usize) type {
             return struct {
                 b: @Vector(L, F),
