@@ -24,38 +24,13 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     _ = listener;
 
     const canvas = try surface.canvas();
-    canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
-    const BLUE =
-        seizer.color.argb(f64){
-        .r = (91.0 / 255.0),
-        .g = (206.0 / 255.0),
-        .b = (250.0 / 255.0),
-        .a = 1.0,
-    };
-    const PINK = seizer.color.argb(f64){
-        .r = (245.0 / 255.0),
-        .g = (169.0 / 255.0),
-        .b = (184.0 / 255.0),
-        .a = 1.0,
-    };
-    //const WHITE = seizer.color.argb(f64).WHITE;
+    canvas.clear(.{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 1.0 });
+    const BLUE = seizer.color.argbFromRGBUnassociatedAlpha(91, 206, 250, 255);
+    const PINK = seizer.color.argbFromRGBUnassociatedAlpha(245, 169, 184, 255);
 
     canvas.line(.{ 5, 5 }, .{ 200, 200 }, .{
-        .width = 5,
-        .color = BLUE,
-        .end_color = PINK,
-        // .gradient = .{
-        //     // .start = .{ 5, 5 },
-        //     // .end = .{ 200, 200 },
-        //     .end_color = PINK,
-        //     .type = .linear,
-        //     // .stops = &.{
-        //     //     .{ .offset = 0.25, .color = PINK },
-        //     //     .{ .offset = 0.5, .color = WHITE },
-        //     //     .{ .offset = 0.75, .color = PINK },
-        //     //     .{ .offset = 1.0, .color = BLUE },
-        //     // },
-        // },
+        .color = BLUE.floatCast(f64),
+        .end_color = PINK.floatCast(f64),
     });
     try surface.present();
 }
