@@ -53,7 +53,7 @@ pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOpti
 // Stuff that is implemented on top of the base functions
 
 pub const NinePatch = struct {
-    image: seizer.image.Image(seizer.color.argb8888),
+    image: seizer.image.Image(seizer.color.argb(f32)),
     inset: seizer.geometry.Inset(u32),
 
     pub const Options = struct {
@@ -62,16 +62,16 @@ pub const NinePatch = struct {
         scale: f64 = 1,
     };
 
-    pub fn init(image: seizer.image.Image(seizer.color.argb8888), inset: seizer.geometry.Inset(u32)) NinePatch {
+    pub fn init(image: seizer.image.Image(seizer.color.argb(f32)), inset: seizer.geometry.Inset(u32)) NinePatch {
         return .{ .image = image, .inset = inset };
     }
 
-    pub fn images(this: @This()) [9]seizer.image.Image(seizer.color.argb8888) {
+    pub fn images(this: @This()) [9]seizer.image.Image(seizer.color.argb(f32)) {
         const left = this.inset.min[0];
         const top = this.inset.min[1];
         const right = this.image.size[0] - this.inset.max[0];
         const bot = this.image.size[1] - this.inset.max[1];
-        return [9]seizer.image.Image(seizer.color.argb8888){
+        return [9]seizer.image.Image(seizer.color.argb(f32)){
             // Inside first
             this.image.slice(this.inset.min, .{ right - left, bot - top }),
             // Edges second

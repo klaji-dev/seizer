@@ -24,16 +24,16 @@ fn deinit() void {
 fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface: *seizer.Display.ToplevelSurface) anyerror!void {
     _ = listener;
 
-    var framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
-    framebuffer.canvas().fillRect(.{ 25, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 1, .g = 0, .b = 0, .a = 1 } });
-    framebuffer.canvas().fillRect(.{ 75, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 1, .b = 0, .a = 1 } });
-    framebuffer.canvas().fillRect(.{ 125, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 0, .b = 1, .a = 1 } });
-    framebuffer.canvas().fillRect(.{ 175, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 0, .b = 0, .a = 1 } });
-    framebuffer.canvas().fillRect(.{ 225, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 0, .b = 0, .a = 0 } });
+    canvas.fillRect(.{ 25, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 1, .g = 0, .b = 0, .a = 1 } });
+    canvas.fillRect(.{ 75, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 1, .b = 0, .a = 1 } });
+    canvas.fillRect(.{ 125, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 0, .b = 1, .a = 1 } });
+    canvas.fillRect(.{ 175, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 0, .b = 0, .a = 1 } });
+    canvas.fillRect(.{ 225, 25 }, .{ 25, 100 }, .{ .color = .{ .r = 0, .g = 0, .b = 0, .a = 0 } });
 
-    try surface.present(framebuffer);
+    try surface.present();
 }
 
 const seizer = @import("seizer");

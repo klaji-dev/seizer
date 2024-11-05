@@ -837,8 +837,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                         min_offset[1] -| tile_pos_in_px[1],
                     };
                     const max_in_tile = [2]u32{
-                        (max_offset[0] -| max_offset[0]) % tile_size[0],
-                        (max_offset[1] -| max_offset[1]) % tile_size[1],
+                        @min((max_offset[0] -| tile_pos_in_px[0]), tile_size[0]),
+                        @min((max_offset[1] -| tile_pos_in_px[1]), tile_size[1]),
                     };
 
                     for (min_in_tile[1]..max_in_tile[1]) |y| {

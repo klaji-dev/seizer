@@ -23,9 +23,9 @@ fn deinit() void {
 fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface: *seizer.Display.ToplevelSurface) anyerror!void {
     _ = listener;
 
-    const framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
-    try surface.present(framebuffer);
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
+    try surface.present();
 }
 
 const seizer = @import("seizer");

@@ -6,7 +6,7 @@ var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
 var font: seizer.Canvas.Font = undefined;
-var player_image: seizer.image.Image(seizer.color.argb8888) = undefined;
+var player_image: seizer.image.Image(seizer.color.argb(f32)) = undefined;
 var sprites: std.MultiArrayList(Sprite) = .{};
 
 var spawn_timer_duration: u32 = 10;
@@ -58,7 +58,7 @@ pub fn init() !void {
     );
     errdefer font.deinit();
 
-    player_image = try seizer.image.Image(seizer.color.argb8888).fromMemory(gpa.allocator(), @embedFile("assets/wedge.png"));
+    player_image = try seizer.image.Image(seizer.color.argb(f32)).fromMemory(gpa.allocator(), @embedFile("assets/wedge.png"));
     errdefer player_image.free(gpa.allocator());
 
     between_frame_timer = try std.time.Timer.start();
@@ -70,6 +70,7 @@ pub fn deinit() void {
     font.deinit();
     player_image.free(gpa.allocator());
     sprites.deinit(gpa.allocator());
+    toplevel_surface.deinit();
     display.deinit();
     _ = gpa.deinit();
 }
@@ -129,30 +130,30 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
 
     // begin rendering
 
-    var framebuffer = try surface.getBuffer();
-    framebuffer.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     for (sprites.items(.pos), sprites.items(.size)) |pos, size| {
-        framebuffer.canvas().textureRect(pos, size, player_image, .{});
+        canvas.textureRect(pos, size, player_image, .{});
     }
 
     var text_pos = [2]f64{ 50, 50 };
-    text_pos[1] += framebuffer.canvas().printText(&font, text_pos, "sprite count = {}", .{sprites.len}, .{})[1];
+    text_pos[1] += canvas.printText(&font, text_pos, "sprite count = {}", .{sprites.len}, .{})[1];
 
     var frametime_total: f64 = 0;
     for (frametimes) |f| {
         frametime_total += @floatFromInt(f);
     }
-    text_pos[1] += framebuffer.canvas().printText(&font, text_pos, "avg. frametime = {d:0.2} ms", .{frametime_total / @as(f64, @floatFromInt(frametimes.len)) / std.time.ns_per_ms}, .{})[1];
+    text_pos[1] += canvas.printText(&font, text_pos, "avg. frametime = {d:0.2} ms", .{frametime_total / @as(f64, @floatFromInt(frametimes.len)) / std.time.ns_per_ms}, .{})[1];
 
     var between_frame_total: f64 = 0;
     for (time_between_frames) |f| {
         between_frame_total += @floatFromInt(f);
     }
-    text_pos[1] += framebuffer.canvas().printText(&font, text_pos, "avg. time between frames = {d:0.2} ms", .{between_frame_total / @as(f64, @floatFromInt(frametimes.len)) / std.time.ns_per_ms}, .{})[1];
+    text_pos[1] += canvas.printText(&font, text_pos, "avg. time between frames = {d:0.2} ms", .{between_frame_total / @as(f64, @floatFromInt(frametimes.len)) / std.time.ns_per_ms}, .{})[1];
 
     try surface.requestAnimationFrame();
-    try surface.present(framebuffer);
+    try surface.present();
 }
 
 const seizer = @import("seizer");
