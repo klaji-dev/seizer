@@ -332,12 +332,12 @@ pub const argb8888 = packed struct(u32) {
     }
 
     /// Convert from sRGB encoded values to linear RGB values.
-    pub fn toArgb(this: @This()) argb(f64) {
+    pub fn toArgb(this: @This(), comptime T: type) argb(T) {
         return .{
-            .b = sRGB.decodeNaive(f64, this.b),
-            .g = sRGB.decodeNaive(f64, this.g),
-            .r = sRGB.decodeNaive(f64, this.r),
-            .a = @as(f64, @floatFromInt(this.a)) / std.math.maxInt(u8),
+            .b = sRGB.decodeNaive(f32, this.b),
+            .g = sRGB.decodeNaive(f32, this.g),
+            .r = sRGB.decodeNaive(f32, this.r),
+            .a = @as(f32, @floatFromInt(this.a)) / std.math.maxInt(u8),
         };
     }
 

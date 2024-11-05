@@ -1,101 +1,63 @@
 pub const main = seizer.main;
 
+var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
 var display: seizer.Display = undefined;
-var window_global: *seizer.Display.Window = undefined;
-var gfx: seizer.Graphics = undefined;
-var swapchain_opt: ?*seizer.Graphics.Swapchain = null;
-var canvas: seizer.Canvas = undefined;
+var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
+var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
-var shield_texture: *seizer.Graphics.Texture = undefined;
-var shield_size: [2]f32 = .{ 0, 0 };
+var shield_image: seizer.image.Image(seizer.color.argb(f32)) = undefined;
 
 pub fn init() !void {
-    display = try seizer.Display.create(seizer.platform.allocator(), seizer.platform.loop(), .{});
-    errdefer display.destroy();
+    try display.init(gpa.allocator(), seizer.getLoop());
 
-    gfx = try seizer.Graphics.create(seizer.platform.allocator(), .{});
-    errdefer gfx.destroy();
+    try display.initToplevelSurface(&toplevel_surface, .{});
+    toplevel_surface.setOnRender(&render_listener, onRender, null);
 
-    window_global = try display.createWindow(.{
-        .title = "TinyVG - Seizer Example",
-        .size = .{ 640, 480 },
-        .on_event = onWindowEvent,
-        .on_render = render,
-    });
-
-    canvas = try seizer.Canvas.init(seizer.platform.allocator(), gfx, .{});
-    errdefer canvas.deinit();
-
-    var shield_image = try seizer.tvg.rendering.renderBuffer(seizer.platform.allocator(), seizer.platform.allocator(), .inherit, null, &shield_icon_tvg);
-    defer shield_image.deinit(seizer.platform.allocator());
-
-    shield_size = .{
-        @floatFromInt(shield_image.width),
-        @floatFromInt(shield_image.height),
-    };
-
-    shield_texture = try gfx.createTexture(
-        seizer.zigimg.ImageUnmanaged{
-            .width = shield_image.width,
-            .height = shield_image.height,
-            .pixels = .{ .rgba32 = @ptrCast(shield_image.pixels) },
-        },
-        .{},
+    var shield_image_tvg = try seizer.tvg.rendering.renderBuffer(
+        gpa.allocator(),
+        gpa.allocator(),
+        .inherit,
+        null,
+        &shield_icon_tvg,
     );
-    errdefer gfx.destroyTexture(shield_texture);
+    defer shield_image_tvg.deinit(gpa.allocator());
 
-    seizer.platform.setDeinitCallback(deinit);
+    shield_image = try seizer.image.Image(seizer.color.argb(f32)).alloc(
+        gpa.allocator(),
+        .{ shield_image_tvg.width, shield_image_tvg.width },
+    );
+    errdefer shield_image.free(gpa.allocator());
+
+    for (shield_image.pixels[0 .. shield_image.size[0] * shield_image.size[1]], shield_image_tvg.pixels) |*out, in| {
+        const argb8888 = seizer.color.argb8888{
+            .b = @enumFromInt(in.b),
+            .r = @enumFromInt(in.r),
+            .g = @enumFromInt(in.g),
+            .a = in.a,
+        };
+        const argb = argb8888.toArgb(f32);
+        out.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(argb.r, argb.g, argb.b, argb.a);
+    }
+
+    seizer.setDeinit(deinit);
 }
 
 pub fn deinit() void {
-    if (swapchain_opt) |swapchain| {
-        gfx.destroySwapchain(swapchain);
-        swapchain_opt = null;
-    }
-    canvas.deinit();
-    display.destroyWindow(window_global);
-    gfx.destroyTexture(shield_texture);
-    gfx.destroy();
-    display.destroy();
+    shield_image.free(gpa.allocator());
+    toplevel_surface.deinit();
+    display.deinit();
+    _ = gpa.deinit();
 }
 
-fn onWindowEvent(window: *seizer.Display.Window, event: seizer.Display.Window.Event) !void {
-    _ = window;
-    switch (event) {
-        .should_close => seizer.platform.setShouldExit(true),
-        .resize, .rescale => {
-            if (swapchain_opt) |swapchain| {
-                gfx.destroySwapchain(swapchain);
-                swapchain_opt = null;
-            }
-        },
-        .input => {},
-    }
-}
+fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface: *seizer.Display.ToplevelSurface) anyerror!void {
+    _ = listener;
 
-fn render(window: *seizer.Display.Window) !void {
-    const window_size = display.windowGetSize(window);
-    const window_scale = display.windowGetScale(window);
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
-    const swapchain = swapchain_opt orelse create_swapchain: {
-        const new_swapchain = try gfx.createSwapchain(display, window, .{ .size = window_size, .scale = window_scale });
-        swapchain_opt = new_swapchain;
-        break :create_swapchain new_swapchain;
-    };
+    canvas.blit(.{ 50, 50 }, shield_image);
 
-    const render_buffer = try gfx.swapchainGetRenderBuffer(swapchain, .{});
-
-    const c = canvas.begin(render_buffer, .{
-        .window_size = window_size,
-        .window_scale = window_scale,
-        .clear_color = .{ 0.7, 0.5, 0.5, 1.0 },
-    });
-
-    c.rect(.{ 50, 50 }, shield_size, .{ .texture = shield_texture });
-
-    canvas.end(render_buffer);
-
-    try gfx.swapchainPresentRenderBuffer(display, window, swapchain, render_buffer);
+    try surface.present();
 }
 
 const shield_icon_tvg = [_]u8{
