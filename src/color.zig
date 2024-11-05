@@ -488,8 +488,8 @@ pub const sRGB = enum(u8) {
     ///
     /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
     pub fn encodeFast(comptime F: type, component_linear: F) sRGB {
-        const max_value = 1.0 - std.math.floatEps(f32);
-        const min_value = std.math.pow(f32, 2, -13);
+        const max_value = comptime (1.0 - std.math.floatEps(f32));
+        const min_value = comptime std.math.pow(f32, 2, -13);
         // written as `!(>)` because of nans
         var in = component_linear;
         if (!(component_linear > min_value)) {
