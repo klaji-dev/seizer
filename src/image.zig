@@ -1,7 +1,7 @@
 pub fn Image(Pixel: type) type {
-    std.debug.assert(@hasDecl(Pixel, "fromArgb8888"));
-    std.debug.assert(@hasDecl(Pixel, "toArgb8888"));
-    std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
+    // std.debug.assert(@hasDecl(Pixel, "fromArgb8888"));
+    // std.debug.assert(@hasDecl(Pixel, "toArgb8888"));
+    // std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
     return struct {
         pixels: [*]Pixel,
         size: [2]u32,
@@ -33,12 +33,12 @@ pub fn Image(Pixel: type) type {
 
             // pre-multiply the image
             for (pixels, img.pixels.rgba32) |*out, in| {
-                out.* = Pixel.fromArgb8888(.{
-                    .b = @enumFromInt(@as(u8, @intCast((@as(u16, in.b) * @as(u16, in.a)) >> 8))),
-                    .g = @enumFromInt(@as(u8, @intCast((@as(u16, in.g) * @as(u16, in.a)) >> 8))),
-                    .r = @enumFromInt(@as(u8, @intCast((@as(u16, in.r) * @as(u16, in.a)) >> 8))),
+                out.* = (seizer.color.argb(seizer.color.sRGB8, .straight, u8){
+                    .b = @enumFromInt(in.b),
+                    .g = @enumFromInt(in.g),
+                    .r = @enumFromInt(in.r),
                     .a = in.a,
-                });
+                }).convertColorTo(f32).convertAlphaTo(f32).convertAlphaModelTo(.premultiplied);
             }
 
             return .{
@@ -253,7 +253,7 @@ pub fn Image(Pixel: type) type {
                         out_channel.* = std.math.clamp(@reduce(.Add, kernel_y * channel_v), 0, 1);
                     }
 
-                    dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argb(f32).fromArray(out_pixel));
+                    dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argbf32.fromArray(out_pixel));
                 }
             }
         }
@@ -986,30 +986,30 @@ test "Tiled ops == Linear ops" {
             prng.random().uintLessThan(u32, 128) + src_size[1],
         };
 
-        const linear = try Image(seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        const linear = try Image(seizer.color.argbf32).alloc(std.testing.allocator, size);
         defer linear.free(std.testing.allocator);
-        const tiled = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        const tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32).alloc(std.testing.allocator, size);
         defer tiled.free(std.testing.allocator);
 
-        const clear_color = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+        const clear_color = seizer.color.argbf32.init(
             prng.random().float(f32),
             prng.random().float(f32),
             prng.random().float(f32),
             prng.random().float(f32),
-        );
+        ).convertAlphaModelTo(.premultiplied);
 
         linear.clear(clear_color);
         tiled.clear(clear_color);
 
-        const src_linear = try Image(seizer.color.argb(f32)).alloc(std.testing.allocator, src_size);
+        const src_linear = try Image(seizer.color.argbf32).alloc(std.testing.allocator, src_size);
         defer src_linear.free(std.testing.allocator);
         for (src_linear.pixels[0 .. src_linear.size[0] * src_linear.size[1]]) |*pixel| {
-            pixel.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+            pixel.* = seizer.color.argbf32.init(
                 prng.random().float(f32),
                 prng.random().float(f32),
                 prng.random().float(f32),
                 prng.random().float(f32),
-            );
+            ).convertAlphaModelTo(.premultiplied);
         }
 
         for (0..10) |_| {
@@ -1047,17 +1047,17 @@ test "Tiled composite == compositeLinear" {
             prng.random().uintLessThan(u32, 128) + src_size[1],
         };
 
-        const dst_composite_linear = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        const dst_composite_linear = try Tiled(.{ 16, 16 }, seizer.color.argbf32).alloc(std.testing.allocator, size);
         defer dst_composite_linear.free(std.testing.allocator);
-        const dst_composite_tiled = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, size);
+        const dst_composite_tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32).alloc(std.testing.allocator, size);
         defer dst_composite_tiled.free(std.testing.allocator);
 
-        const clear_color = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+        const clear_color = seizer.color.argb(f32, .straight, f32).init(
             prng.random().float(f32),
             prng.random().float(f32),
             prng.random().float(f32),
             prng.random().float(f32),
-        );
+        ).convertAlphaModelTo(.premultiplied);
         errdefer std.debug.print("clear color = ({d:.2}, {d:.2}, {d:.2}, {d:.2})\n", .{
             clear_color.b,
             clear_color.g,
@@ -1068,18 +1068,18 @@ test "Tiled composite == compositeLinear" {
         dst_composite_linear.clear(clear_color);
         dst_composite_tiled.clear(clear_color);
 
-        const src_linear = try Image(seizer.color.argb(f32)).alloc(std.testing.allocator, src_size);
+        const src_linear = try Image(seizer.color.argbf32).alloc(std.testing.allocator, src_size);
         defer src_linear.free(std.testing.allocator);
-        const src_tiled = try Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(std.testing.allocator, src_size);
+        const src_tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32).alloc(std.testing.allocator, src_size);
         defer src_tiled.free(std.testing.allocator);
         for (0..src_size[1]) |y| {
             for (0..src_size[0]) |x| {
-                const pixel = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+                const pixel = seizer.color.argb(f32, .straight, f32).init(
                     prng.random().float(f32),
                     prng.random().float(f32),
                     prng.random().float(f32),
                     prng.random().float(f32),
-                );
+                ).convertAlphaModelTo(.premultiplied);
                 const pos = [2]u32{ @intCast(x), @intCast(y) };
                 src_linear.setPixel(pos, pixel);
                 src_tiled.setPixel(pos, pixel);

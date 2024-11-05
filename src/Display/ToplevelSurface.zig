@@ -16,7 +16,7 @@ new_configuration: Configuration,
 
 /// This framebuffer is used for compositing. The buffer that will be sent to the compositor
 /// will need to be have a linear layout and be `argb8888` encoded.
-framebuffer: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)),
+framebuffer: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32),
 swapchain: Swapchain,
 on_render_listener: ?*OnRenderListener,
 on_input_listener: ?*OnInputListener,
@@ -112,7 +112,7 @@ pub fn present(this: *@This()) !void {
     for (0..buffer.size[1]) |y| {
         const row = buffer.pixels[y * buffer.size[0] ..][0..buffer.size[0]];
         for (row, 0..) |*px, x| {
-            px.* = this.framebuffer.getPixel(.{ @intCast(x), @intCast(y) }).toArgb8888();
+            px.* = this.framebuffer.getPixel(.{ @intCast(x), @intCast(y) }).convertColorTo(seizer.color.sRGB8).convertAlphaTo(u8);
         }
     }
 
@@ -146,12 +146,12 @@ pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
     return .{ @floatFromInt(this.current_configuration.window_size[0]), @floatFromInt(this.current_configuration.window_size[1]) };
 }
 
-pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argb(f64)) void {
+pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
-    this.framebuffer.clear(color.floatCast(f32));
+    this.framebuffer.clear(color);
 }
 
-pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argb(f32))) void {
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const pos_i = [2]i32{
@@ -191,10 +191,10 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
     const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
     const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
 
-    this.framebuffer.drawFillRect(a, b, options.color.floatCast(f32));
+    this.framebuffer.drawFillRect(a, b, options.color);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argb(f32)), options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const start_pos = [2]u32{
@@ -211,8 +211,6 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
         @floatFromInt(src_image.size[1]),
     };
 
-    const color_mask = options.color.floatCast(f32);
-
     for (start_pos[1]..end_pos[1]) |y| {
         for (start_pos[0]..end_pos[0]) |x| {
             const pos = [2]f64{ @floatFromInt(x), @floatFromInt(y) };
@@ -225,7 +223,7 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
                 @intFromFloat(texture_coord[0]),
                 @intFromFloat(texture_coord[1]),
             });
-            const src_pixel_tint = src_pixel.tint(color_mask);
+            const src_pixel_tint = src_pixel.tint(options.color);
             this.framebuffer.setPixel(.{ @intCast(x), @intCast(y) }, dst_pixel.compositeSrcOver(src_pixel_tint));
         }
     }
@@ -243,8 +241,7 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
     };
 
     const end_color = options.end_color orelse options.color;
-
-    this.framebuffer.drawLine(start_i, end_i, options.color.floatCast(f32), end_color.floatCast(f32));
+    this.framebuffer.drawLine(start_i, end_i, options.color, end_color);
 }
 
 // shimizu callback functions

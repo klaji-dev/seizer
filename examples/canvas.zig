@@ -25,12 +25,12 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
 
     const canvas = try surface.canvas();
     canvas.clear(.{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 1.0 });
-    const BLUE = seizer.color.argbFromRGBUnassociatedAlpha(91, 206, 250, 255);
-    const PINK = seizer.color.argbFromRGBUnassociatedAlpha(245, 169, 184, 255);
+    const BLUE = seizer.color.argb(seizer.color.sRGB8, .straight, u8).init(@enumFromInt(91), @enumFromInt(206), @enumFromInt(250), 255).convertColorTo(f32).convertAlphaTo(f32).convertAlphaModelTo(.premultiplied);
+    const PINK = seizer.color.argb(seizer.color.sRGB8, .straight, u8).init(@enumFromInt(245), @enumFromInt(169), @enumFromInt(184), 255).convertColorTo(f32).convertAlphaTo(f32).convertAlphaModelTo(.premultiplied);
 
     canvas.line(.{ 5, 5 }, .{ 200, 200 }, .{
-        .color = BLUE.floatCast(f64),
-        .end_color = PINK.floatCast(f64),
+        .color = BLUE,
+        .end_color = PINK,
     });
     try surface.present();
 }

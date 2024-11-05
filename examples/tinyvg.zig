@@ -5,7 +5,7 @@ var display: seizer.Display = undefined;
 var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
-var shield_image: seizer.image.Image(seizer.color.argb(f32)) = undefined;
+var shield_image: seizer.image.Image(seizer.color.argbf32) = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
@@ -22,14 +22,17 @@ pub fn init() !void {
     );
     defer shield_image_tvg.deinit(gpa.allocator());
 
-    shield_image = try seizer.image.Image(seizer.color.argb(f32)).alloc(
+    shield_image = try seizer.image.Image(seizer.color.argbf32).alloc(
         gpa.allocator(),
         .{ shield_image_tvg.width, shield_image_tvg.width },
     );
     errdefer shield_image.free(gpa.allocator());
 
     for (shield_image.pixels[0 .. shield_image.size[0] * shield_image.size[1]], shield_image_tvg.pixels) |*out, in| {
-        out.* = seizer.color.argbFromRGBUnassociatedAlpha(in.r, in.g, in.b, in.a);
+        out.* = seizer.color.argb(seizer.color.sRGB8, .straight, u8).init(@enumFromInt(in.b), @enumFromInt(in.g), @enumFromInt(in.r), in.a)
+            .convertColorTo(f32)
+            .convertAlphaTo(f32)
+            .convertAlphaModelTo(.premultiplied);
     }
 
     seizer.setDeinit(deinit);

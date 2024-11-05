@@ -13,7 +13,7 @@ pub fn allocate(this: *@This(), wl_shm: shimizu.Proxy(shimizu.core.wl_shm), size
     const fd = try std.posix.memfd_create("swapchain", 0);
     defer std.posix.close(fd);
 
-    const frame_size = size[0] * size[1] * @sizeOf(seizer.color.argb8888);
+    const frame_size = size[0] * size[1] * @sizeOf(seizer.color.argb8);
     const total_size = frame_size * count;
     try std.posix.ftruncate(fd, total_size);
 
@@ -32,7 +32,7 @@ pub fn allocate(this: *@This(), wl_shm: shimizu.Proxy(shimizu.core.wl_shm), size
             .offset = @intCast(offset),
             .width = @intCast(size[0]),
             .height = @intCast(size[1]),
-            .stride = @intCast(size[0] * @sizeOf(seizer.color.argb8888)),
+            .stride = @intCast(size[0] * @sizeOf(seizer.color.argb8)),
             .format = .argb8888,
         });
         buffers.appendAssumeCapacity(.{
@@ -80,7 +80,7 @@ fn onWlBufferEvent(listener: *shimizu.Listener, wl_buffer: shimizu.Proxy(shimizu
     }
 }
 
-const Image = seizer.image.Image(seizer.color.argb8888);
+const Image = seizer.image.Image(seizer.color.argb8);
 const Buffer = @import("./Buffer.zig");
 
 const seizer = @import("../seizer.zig");

@@ -7,18 +7,55 @@
 //! - https://bottosson.github.io/posts/colorwrong/
 //! - https://mina86.com/2019/srgb-xyz-conversion/
 
-/// Helper function. Takes 8-bit sRGB components plus an unassociated alpha and
-/// converts them to single precision floating point linear RGBA with premultiplied alpha.
-pub fn argbFromRGBUnassociatedAlpha(r: u8, g: u8, b: u8, a: u8) argb(f32) {
-    const color_int = argb8888{
-        .b = @enumFromInt(b),
-        .r = @enumFromInt(r),
-        .g = @enumFromInt(g),
-        .a = a,
-    };
-    const color_float = color_int.toArgb(f32);
-    return argb(f32).fromRGBUnassociatedAlpha(color_float.r, color_float.g, color_float.b, color_float.a);
-}
+// Based on the Gen-i-cam Pixel Format Naming Convention
+
+pub const argb8 = argb(sRGB8, .premultiplied, u8);
+pub const argbf32 = argb(f32, .premultiplied, f32);
+
+/// An enum used to specify which alpha model a pixel format is using.
+pub const Alpha = enum {
+    /// Also known as "associated alpha".
+    ///
+    /// You can think of premultiplied colors as encoding the following:
+    ///
+    ///  1. The amount of light reflected or emitted by an object (the color components)
+    ///  2. The amount of light blocked by an object (the alpha component)
+    ///
+    /// In this alpha model color components "contain" the alpha value already. Transforming
+    /// from a `straight` alpha model involves multiplying each color component by the alpha
+    /// value (e.g. `r * a`, `g * a`, `b * a`). This has several implications, one of which
+    /// is that there is a single transparent color, which is the one with all components
+    /// set to 0 (as `x * 0 = 0`).
+    ///
+    /// This color model is extremely useful when compositing images, as it remove a multiply
+    /// and a division from each calculation. For example, it changes the `xor` compositing
+    /// operation from:
+    ///
+    /// ```
+    /// const out_alpha = src_alpha * (1 - dst_alpha) + dst_alpha * (1 - src_alpha);
+    /// const out_color = (src_color * src_alpha * (1 - dst_alpha) + dst_color * dst_alpha * (1 - src_alpha)) / out_alpha;
+    /// ```
+    ///
+    /// to:
+    ///
+    /// ```
+    /// const out_alpha = src_alpha * (1 - dst_alpha) + dst_alpha * (1 - src_alpha);
+    /// const out_color = src_color * (1 - dst_alpha) + dst_color * (1 - src_alpha);
+    /// ```
+    ///
+    /// which is a huge win for performance.
+    premultiplied,
+
+    /// Also known as "unassociated alpha" or "non-premultiplied alpha".
+    ///
+    /// This color model is often used by image formats. PNG uses this color model, for example.
+    ///
+    /// The reason to include this is so we can model those pixels as a distinct type, and [have
+    /// a place to clarify potential ambiguity][nigel-tao].
+    ///
+    /// [nigel-tao]: https://nigeltao.github.io/blog/2022/premultiplied-alpha.html
+    straight,
+};
 
 /// Linear RGB color premultiplied with an alpha component.
 ///
@@ -35,68 +72,175 @@ pub fn argbFromRGBUnassociatedAlpha(r: u8, g: u8, b: u8, a: u8) argb(f32) {
 ///   light behind it (`a`)".
 ///
 /// The component order (BGRA) was chosen to match Linux's DRM_FOURCC `argb8888` format.
-pub fn argb(F: type) type {
+pub fn argb(ColorData: type, comptime alpha_model: Alpha, comptime AlphaData: type) type {
+    const D_ZERO: ColorData = switch (@typeInfo(ColorData)) {
+        .Int => 0,
+        .Float => 0.0,
+        .Enum => ColorData.ZERO,
+        else => @compileError("Unsupported color D type: " ++ @typeName(ColorData)),
+    };
+    const D_ONE: ColorData = switch (@typeInfo(ColorData)) {
+        .Int => std.math.maxInt(ColorData),
+        .Float => 1.0,
+        .Enum => ColorData.ONE,
+        else => @compileError("Unsupported color D type: " ++ @typeName(ColorData)),
+    };
+    const A_ZERO: AlphaData = switch (@typeInfo(AlphaData)) {
+        .Int => 0,
+        .Float => 0.0,
+        else => @compileError("Unsupported color A type: " ++ @typeName(AlphaData)),
+    };
+    const A_ONE: AlphaData = switch (@typeInfo(AlphaData)) {
+        .Int => std.math.maxInt(AlphaData),
+        .Float => 1.0,
+        else => @compileError("Unsupported color A type: " ++ @typeName(AlphaData)),
+    };
     return extern struct {
-        /// How much `blue` light this object is emitting/reflecting
-        b: F,
-        /// How much `green` light this object is emitting/reflecting
-        g: F,
-        /// How much `red` light this object is emitting/reflecting
-        r: F,
-        /// How much of the light this object blocks from objects behind it.
-        a: F,
+        b: ColorData,
+        g: ColorData,
+        r: ColorData,
+        a: AlphaData,
 
-        pub const WHITE: @This() = .{ .b = 1, .g = 1, .r = 1, .a = 1 };
-        pub const BLACK: @This() = .{ .b = 0, .g = 0, .r = 0, .a = 1 };
+        pub const TRANSPARENT: @This() = .{ .b = D_ZERO, .g = D_ZERO, .r = D_ZERO, .a = A_ZERO };
+        pub const WHITE: @This() = .{ .b = D_ONE, .g = D_ONE, .r = D_ONE, .a = A_ONE };
+        pub const BLACK: @This() = .{ .b = D_ZERO, .g = D_ZERO, .r = D_ZERO, .a = A_ONE };
 
-        pub fn fromArray(array: [4]F) @This() {
+        pub fn init(b: ColorData, g: ColorData, r: ColorData, a: AlphaData) @This() {
+            return .{ .b = b, .g = g, .r = r, .a = a };
+        }
+
+        pub fn fromArray(array: [4]ColorData) @This() {
             return .{ .b = array[0], .g = array[1], .r = array[2], .a = array[3] };
         }
 
-        pub fn toArray(this: @This()) [4]F {
+        pub fn toArray(this: @This()) [4]ColorData {
             return .{ this.b, this.g, this.r, this.a };
         }
 
-        /// Convert from sRGB encoded values to linear sRGB values.
-        ///
-        /// Necessary to support use in seizer.image.Image
-        pub fn fromArgb8888(encoded: argb8888) @This() {
-            return .{
-                .b = sRGB.decodeNaive(F, encoded.b),
-                .g = sRGB.decodeNaive(F, encoded.g),
-                .r = sRGB.decodeNaive(F, encoded.r),
-                .a = @as(F, @floatFromInt(encoded.a)) / std.math.maxInt(u8),
+        pub fn convertColorTo(this: @This(), OtherColorData: type) argb(OtherColorData, alpha_model, AlphaData) {
+            if (OtherColorData == ColorData) return this;
+
+            return switch (@typeInfo(OtherColorData)) {
+                .Float => switch (@typeInfo(ColorData)) {
+                    .Float => argb(OtherColorData, alpha_model, AlphaData){
+                        .b = @floatCast(this.b),
+                        .g = @floatCast(this.g),
+                        .r = @floatCast(this.r),
+                        .a = this.a,
+                    },
+                    .Enum => {
+                        if (!@hasDecl(ColorData, "toOptical")) @compileError("Cannot convert from " ++ @typeName(ColorData) ++ " to " ++ @typeName(OtherColorData));
+                        return argb(OtherColorData, alpha_model, AlphaData){
+                            .b = this.b.toOptical(OtherColorData),
+                            .g = this.g.toOptical(OtherColorData),
+                            .r = this.r.toOptical(OtherColorData),
+                            .a = this.a,
+                        };
+                    },
+                    else => @compileError("Cannot convert from " ++ @typeName(ColorData) ++ " to " ++ @typeName(OtherColorData)),
+                },
+                .Enum => {
+                    if (!@hasDecl(OtherColorData, "fromOptical")) @compileError("Cannot convert from " ++ @typeName(ColorData) ++ " to " ++ @typeName(OtherColorData));
+                    return argb(OtherColorData, alpha_model, AlphaData){
+                        .b = OtherColorData.fromOptical(ColorData, this.b),
+                        .g = OtherColorData.fromOptical(ColorData, this.g),
+                        .r = OtherColorData.fromOptical(ColorData, this.r),
+                        .a = this.a,
+                    };
+                },
+                else => @compileError("Cannot convert from " ++ @typeName(ColorData) ++ " to " ++ @typeName(OtherColorData)),
             };
         }
 
-        /// Convert from sRGB encoded values to linear sRGB values.
-        ///
-        /// Necessary to support use in seizer.image.Image
-        pub fn toArgb8888(this: @This()) argb8888 {
-            return .{
-                .b = sRGB.encodeFast(F, this.b),
-                .g = sRGB.encodeFast(F, this.g),
-                .r = sRGB.encodeFast(F, this.r),
-                .a = @intFromFloat(this.a * std.math.maxInt(u8)),
+        pub fn convertAlphaTo(this: @This(), OtherAlphaData: type) argb(ColorData, alpha_model, OtherAlphaData) {
+            if (OtherAlphaData == AlphaData) return this;
+
+            return switch (@typeInfo(OtherAlphaData)) {
+                .Float => switch (@typeInfo(AlphaData)) {
+                    .Float => argb(ColorData, alpha_model, OtherAlphaData){
+                        .b = this.b,
+                        .g = this.g,
+                        .r = this.r,
+                        .a = @floatCast(this.a),
+                    },
+                    .Int => argb(ColorData, alpha_model, OtherAlphaData){
+                        .b = this.b,
+                        .g = this.g,
+                        .r = this.r,
+                        .a = @as(OtherAlphaData, @floatFromInt(this.a)) / std.math.maxInt(AlphaData),
+                    },
+                    else => @compileError("Cannot convert from AlphaData type " ++ @typeName(AlphaData) ++ " to " ++ @typeName(OtherAlphaData)),
+                },
+                .Int => |other_a_int_info| switch (@typeInfo(AlphaData)) {
+                    .Int => |a_int_info| {
+                        const AMax = @Type(.{ .Int = .{
+                            .signedness = .unsigned,
+                            .bits = @max(a_int_info.bits, other_a_int_info.bits),
+                        } });
+                        return .{
+                            .b = this.b,
+                            .g = this.g,
+                            .r = this.r,
+                            .a = std.math.mulWide(AMax, this.a, std.math.maxInt(AlphaData)) / std.math.maxInt(OtherAlphaData),
+                        };
+                    },
+                    .Float => .{
+                        .b = this.b,
+                        .g = this.g,
+                        .r = this.r,
+                        .a = @intFromFloat(this.a * std.math.maxInt(OtherAlphaData)),
+                    },
+                    else => @compileError("Cannot convert from AlphaData type " ++ @typeName(AlphaData) ++ " to " ++ @typeName(OtherAlphaData)),
+                },
+                else => @compileError("Cannot convert from AlphaData type " ++ @typeName(AlphaData) ++ " to " ++ @typeName(OtherAlphaData)),
             };
         }
 
-        /// use `@floatCast` on each component
-        pub fn floatCast(this: @This(), comptime OtherF: type) argb(OtherF) {
-            return .{
-                .b = @floatCast(this.b),
-                .g = @floatCast(this.g),
-                .r = @floatCast(this.r),
-                .a = @floatCast(this.a),
-            };
-        }
+        pub fn convertAlphaModelTo(this: @This(), comptime other_alpha_model: Alpha) argb(ColorData, other_alpha_model, AlphaData) {
+            if (other_alpha_model == alpha_model) return this;
 
-        pub fn fromRGBUnassociatedAlpha(r: F, g: F, b: F, a: F) @This() {
-            return .{
-                .b = b * a,
-                .g = g * a,
-                .r = r * a,
-                .a = a,
+            std.debug.assert(@typeInfo(ColorData) == .Float); // Only operations on (linear) numeric types are supported
+            std.debug.assert(@typeInfo(AlphaData) == .Int or @typeInfo(AlphaData) == .Float); // Only operations on (linear) numeric types are supported
+
+            const Conversion = enum {
+                premultiplied_to_straight,
+                straight_to_premultiplied,
+            };
+            const conversion: Conversion = switch (alpha_model) {
+                .premultiplied => switch (other_alpha_model) {
+                    .premultiplied => unreachable,
+                    .straight => .premultiplied_to_straight,
+                },
+                .straight => switch (other_alpha_model) {
+                    .straight => unreachable,
+                    .premultiplied => .straight_to_premultiplied,
+                },
+            };
+
+            const alpha_as_float: ColorData = switch (@typeInfo(AlphaData)) {
+                .Int => @as(ColorData, @floatFromInt(this.a)) / std.math.maxInt(AlphaData),
+                .Float => @floatCast(this.a),
+                else => @compileError("Unsupported type for Alpha model conversion: " ++ @typeName(AlphaData)),
+            };
+
+            return switch (conversion) {
+                .premultiplied_to_straight => if (alpha_as_float != 0) .{
+                    .b = this.b / alpha_as_float,
+                    .g = this.g / alpha_as_float,
+                    .r = this.r / alpha_as_float,
+                    .a = this.a,
+                } else .{
+                    .b = 0,
+                    .g = 0,
+                    .r = 0,
+                    .a = 0,
+                },
+                .straight_to_premultiplied => .{
+                    .b = this.b * alpha_as_float,
+                    .g = this.g * alpha_as_float,
+                    .r = this.r * alpha_as_float,
+                    .a = this.a,
+                },
             };
         }
 
@@ -109,8 +253,8 @@ pub fn argb(F: type) type {
             };
         }
 
-        pub fn blend(this: @This(), other: @This(), f: F) @This() {
-            const clamped: F = std.math.clamp(f, 0.0, 1.0);
+        pub fn blend(this: @This(), other: @This(), f: ColorData) @This() {
+            const clamped: ColorData = std.math.clamp(f, 0.0, 1.0);
             return .{
                 .b = std.math.lerp(this.b, other.b, clamped),
                 .g = std.math.lerp(this.g, other.g, clamped),
@@ -124,20 +268,20 @@ pub fn argb(F: type) type {
             dst: [L]@This(),
             src: [L]@This(),
         ) [L]@This() {
-            var dst_b: [L]F = undefined;
-            var dst_g: [L]F = undefined;
-            var dst_r: [L]F = undefined;
-            var dst_a: [L]F = undefined;
+            var dst_b: [L]ColorData = undefined;
+            var dst_g: [L]ColorData = undefined;
+            var dst_r: [L]ColorData = undefined;
+            var dst_a: [L]ColorData = undefined;
             for (dst, &dst_b, &dst_g, &dst_r, &dst_a) |px, *b, *g, *r, *a| {
                 b.* = px.b;
                 g.* = px.g;
                 r.* = px.r;
                 a.* = px.a;
             }
-            var src_b: [L]F = undefined;
-            var src_g: [L]F = undefined;
-            var src_r: [L]F = undefined;
-            var src_a: [L]F = undefined;
+            var src_b: [L]ColorData = undefined;
+            var src_g: [L]ColorData = undefined;
+            var src_r: [L]ColorData = undefined;
+            var src_a: [L]ColorData = undefined;
             for (src, &src_b, &src_g, &src_r, &src_a) |px, *b, *g, *r, *a| {
                 b.* = px.b;
                 g.* = px.g;
@@ -145,21 +289,21 @@ pub fn argb(F: type) type {
                 a.* = px.a;
             }
 
-            const src_av: @Vector(L, F) = src_a;
-            const dst_av: @Vector(L, F) = dst_a;
-            const res_a: [L]F = src_av + dst_av * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+            const src_av: @Vector(L, ColorData) = src_a;
+            const dst_av: @Vector(L, ColorData) = dst_a;
+            const res_a: [L]ColorData = src_av + dst_av * (@as(@Vector(L, ColorData), @splat(1.0)) - src_av);
 
-            const dst_bv: @Vector(L, F) = dst_b;
-            const src_bv: @Vector(L, F) = src_b;
-            const res_b: [L]F = src_bv + dst_bv * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+            const dst_bv: @Vector(L, ColorData) = dst_b;
+            const src_bv: @Vector(L, ColorData) = src_b;
+            const res_b: [L]ColorData = src_bv + dst_bv * (@as(@Vector(L, ColorData), @splat(1.0)) - src_av);
 
-            const dst_gv: @Vector(L, F) = dst_g;
-            const src_gv: @Vector(L, F) = src_g;
-            const res_g: [L]F = src_gv + dst_gv * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+            const dst_gv: @Vector(L, ColorData) = dst_g;
+            const src_gv: @Vector(L, ColorData) = src_g;
+            const res_g: [L]ColorData = src_gv + dst_gv * (@as(@Vector(L, ColorData), @splat(1.0)) - src_av);
 
-            const dst_rv: @Vector(L, F) = dst_r;
-            const src_rv: @Vector(L, F) = src_r;
-            const res_r: [L]F = src_rv + dst_rv * (@as(@Vector(L, F), @splat(1.0)) - src_av);
+            const dst_rv: @Vector(L, ColorData) = dst_r;
+            const src_rv: @Vector(L, ColorData) = src_r;
+            const res_r: [L]ColorData = src_rv + dst_rv * (@as(@Vector(L, ColorData), @splat(1.0)) - src_av);
 
             var res: [L]@This() = undefined;
             for (&res, res_b, res_g, res_r, res_a) |*px, b, g, r, a| {
@@ -168,13 +312,13 @@ pub fn argb(F: type) type {
             return res;
         }
 
-        pub const SUGGESTED_VECTOR_LEN = std.simd.suggestVectorLength(F) orelse 16;
+        pub const SUGGESTED_VECTOR_LEN = std.simd.suggestVectorLength(ColorData) orelse 16;
         pub fn Vectorized(comptime L: usize) type {
             return struct {
-                b: @Vector(L, F),
-                g: @Vector(L, F),
-                r: @Vector(L, F),
-                a: @Vector(L, F),
+                b: @Vector(L, ColorData),
+                g: @Vector(L, ColorData),
+                r: @Vector(L, ColorData),
+                a: @Vector(L, ColorData),
             };
         }
         pub fn compositeSrcOverVecPlanar(
@@ -183,338 +327,279 @@ pub fn argb(F: type) type {
             src: Vectorized(L),
         ) Vectorized(L) {
             return .{
-                .b = src.b + dst.b * (@as(@Vector(L, F), @splat(1.0)) - src.a),
-                .g = src.g + dst.g * (@as(@Vector(L, F), @splat(1.0)) - src.a),
-                .r = src.r + dst.r * (@as(@Vector(L, F), @splat(1.0)) - src.a),
-                .a = src.a + dst.a * (@as(@Vector(L, F), @splat(1.0)) - src.a),
+                .b = src.b + dst.b * (@as(@Vector(L, ColorData), @splat(1.0)) - src.a),
+                .g = src.g + dst.g * (@as(@Vector(L, ColorData), @splat(1.0)) - src.a),
+                .r = src.r + dst.r * (@as(@Vector(L, ColorData), @splat(1.0)) - src.a),
+                .a = src.a + dst.a * (@as(@Vector(L, ColorData), @splat(1.0)) - src.a),
             };
         }
 
         pub fn compositeSrcOver(dst: @This(), src: @This()) @This() {
-            return .{
-                .b = src.b + dst.b * (1.0 - src.a),
-                .g = src.g + dst.g * (1.0 - src.a),
-                .r = src.r + dst.r * (1.0 - src.a),
-                .a = src.a + dst.a * (1.0 - src.a),
+            return switch (alpha_model) {
+                .premultiplied => .{
+                    .b = src.b + dst.b * (1.0 - src.a),
+                    .g = src.g + dst.g * (1.0 - src.a),
+                    .r = src.r + dst.r * (1.0 - src.a),
+                    .a = src.a + dst.a * (1.0 - src.a),
+                },
+                .straight => {
+                    const out_a = src.a + dst.a * (1.0 - src.a);
+                    return .{
+                        .b = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / out_a,
+                        .g = (src.g * src.a + dst.g * dst.a * (1.0 - src.a)) / out_a,
+                        .r = (src.r * src.a + dst.r * dst.a * (1.0 - src.a)) / out_a,
+                        .a = out_a,
+                    };
+                },
             };
         }
 
         pub fn compositeXor(dst: @This(), src: @This()) @This() {
-            return .{
-                .b = src.b * (1.0 - dst.a) + dst.b * (1.0 - src.a),
-                .g = src.g * (1.0 - dst.a) + dst.g * (1.0 - src.a),
-                .r = src.r * (1.0 - dst.a) + dst.r * (1.0 - src.a),
-                .a = src.a * (1.0 - dst.a) + dst.a * (1.0 - src.a),
+            return switch (alpha_model) {
+                .premultiplied => .{
+                    .b = src.b * (1.0 - dst.a) + dst.b * (1.0 - src.a),
+                    .g = src.g * (1.0 - dst.a) + dst.g * (1.0 - src.a),
+                    .r = src.r * (1.0 - dst.a) + dst.r * (1.0 - src.a),
+                    .a = src.a * (1.0 - dst.a) + dst.a * (1.0 - src.a),
+                },
+                .straight => {
+                    const out_a = src.a * (1.0 - dst.a) + dst.a * (1.0 - src.a);
+                    return .{
+                        .b = (src.b * src.a * (1.0 - dst.a) + dst.b * dst.a * (1.0 - src.a)) / out_a,
+                        .g = (src.g * src.a * (1.0 - dst.a) + dst.g * dst.a * (1.0 - src.a)) / out_a,
+                        .r = (src.r * src.a * (1.0 - dst.a) + dst.r * dst.a * (1.0 - src.a)) / out_a,
+                        .a = out_a,
+                    };
+                },
             };
         }
     };
 }
 
-test "argb(f32).compositeSrcOverVec" {
-    var prng = std.Random.DefaultPrng.init(438626002704109799);
-
-    const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
-
-    var dst_array: [vector_len]argb(f32) = undefined;
-    var src_array: [vector_len]argb(f32) = undefined;
-    var result_array: [vector_len]argb(f32) = undefined;
-    for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
-        dst.* = argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-        src.* = argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-        res.* = dst.compositeSrcOver(src.*);
-    }
-
-    const result_vec: [vector_len]argb(f32) = argb(f32).compositeSrcOverVec(vector_len, dst_array, src_array);
-    try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec);
+test "convert sRGB8 to linear f32" {
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(1, 1, 1, 1),
+        argb(sRGB8, .straight, f32).init(@enumFromInt(0xff), @enumFromInt(0xff), @enumFromInt(0xff), 1).convertColorTo(f32),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32){ .b = 0.21586053, .g = 0.21586053, .r = 0.21586053, .a = 0.5 },
+        argb(sRGB8, .straight, f32).init(@enumFromInt(0x80), @enumFromInt(0x80), @enumFromInt(0x80), 0.5).convertColorTo(f32),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32){ .b = 0, .g = 0, .r = 0, .a = 1 },
+        argb(sRGB8, .straight, f32).init(@enumFromInt(0x00), @enumFromInt(0x00), @enumFromInt(0x00), 1).convertColorTo(f32),
+    );
 }
 
-test "argb(f32).compositeSrcOverVecPlanar" {
-    var prng = std.Random.DefaultPrng.init(438626002704109799);
-
-    const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
-
-    var dst_array: [vector_len]argb(f32) = undefined;
-    var src_array: [vector_len]argb(f32) = undefined;
-    var result_array: [vector_len]argb(f32) = undefined;
-    for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
-        dst.* = argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-        src.* = argb(f32).fromRGBUnassociatedAlpha(
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-            prng.random().float(f32),
-        );
-        res.* = dst.compositeSrcOver(src.*);
-    }
-
-    var dst_b_array: [vector_len]f32 = undefined;
-    var dst_g_array: [vector_len]f32 = undefined;
-    var dst_r_array: [vector_len]f32 = undefined;
-    var dst_a_array: [vector_len]f32 = undefined;
-    for (&dst_b_array, &dst_g_array, &dst_r_array, &dst_a_array, dst_array) |*b, *g, *r, *a, px| {
-        b.* = px.b;
-        g.* = px.g;
-        r.* = px.r;
-        a.* = px.a;
-    }
-    const dst_vec: argb(f32).Vectorized(vector_len) = .{
-        .b = dst_b_array,
-        .g = dst_g_array,
-        .r = dst_r_array,
-        .a = dst_a_array,
-    };
-
-    var src_b_array: [vector_len]f32 = undefined;
-    var src_g_array: [vector_len]f32 = undefined;
-    var src_r_array: [vector_len]f32 = undefined;
-    var src_a_array: [vector_len]f32 = undefined;
-    for (&src_b_array, &src_g_array, &src_r_array, &src_a_array, src_array) |*b, *g, *r, *a, px| {
-        b.* = px.b;
-        g.* = px.g;
-        r.* = px.r;
-        a.* = px.a;
-    }
-    const src_vec: argb(f32).Vectorized(vector_len) = .{
-        .b = src_b_array,
-        .g = src_g_array,
-        .r = src_r_array,
-        .a = src_a_array,
-    };
-
-    const result_vec: argb(f32).Vectorized(vector_len) = argb(f32).compositeSrcOverVecPlanar(vector_len, dst_vec, src_vec);
-
-    var result_vec_array: [vector_len]argb(f32) = undefined;
-    const result_b_array: [vector_len]f32 = result_vec.b;
-    const result_g_array: [vector_len]f32 = result_vec.g;
-    const result_r_array: [vector_len]f32 = result_vec.r;
-    const result_a_array: [vector_len]f32 = result_vec.a;
-    for (&result_vec_array, result_b_array, result_g_array, result_r_array, result_a_array) |*px, b, g, r, a| {
-        px.* = .{
-            .b = b,
-            .g = g,
-            .r = r,
-            .a = a,
-        };
-    }
-
-    try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec_array);
+test "convert linear f32 to sRGB8" {
+    try std.testing.expectEqual(
+        argb(sRGB8, .straight, f32).init(@enumFromInt(0xff), @enumFromInt(0xff), @enumFromInt(0xff), 1),
+        argb(f32, .straight, f32).init(1, 1, 1, 1).convertColorTo(sRGB8),
+    );
+    try std.testing.expectEqual(
+        argb(sRGB8, .straight, f32).init(@enumFromInt(0x80), @enumFromInt(0x80), @enumFromInt(0x80), 0.5),
+        argb(f32, .straight, f32).init(0.21586053, 0.21586053, 0.21586053, 0.5).convertColorTo(sRGB8),
+    );
+    try std.testing.expectEqual(
+        argb(sRGB8, .straight, f32).init(@enumFromInt(0x00), @enumFromInt(0x00), @enumFromInt(0x00), 1),
+        argb(f32, .straight, f32).init(0, 0, 0, 1).convertColorTo(sRGB8),
+    );
 }
 
-/// 3 8-bit sRGB encoded colors premultiplied with an linear 8-bit alpha component.
-///
-/// Breaking down the jargon:
-/// - **sRGB encoded**: The standard RGB encoding used for consumer devices, it
-///   allocates a limited value range (usually the 8-bit `0..256` value range) towards
-///   darker values that humans can more easily distinguish. Doing arithmetic on these
-///   encoded values will produce incorrect results, though artists may occasionally
-///   use it intentionally. However, in general, **convert sRGB values to linear RGB
-///   values before doing math on them**!
-/// - **RGB**: The color is specified using three components: the amount of `red` light,
-///   the amount of `green` light, and the amount of `blue` light.
-/// - **premultiplied alpha**: Sometimes called "associated alpha". The color channels
-///   already have the alpha factored into them. You can think of this in terms of
-///   "this object emits this much light (`r`, `g`, and `b`), and blocks X% of the
-///   light behind it (`a`)".
-/// - **linear alpha**: The alpha component is not encoded, and the `0..256` range can
-///   be converted to `0..1` using `a / 0xFF`.
-///
-/// The component order (BGRA) was chosen to match Linux's DRM_FOURCC `argb8888` format.
-pub const argb8888 = packed struct(u32) {
-    b: sRGB,
-    g: sRGB,
-    r: sRGB,
-    a: u8,
+test "convert straight alpha to premultiplied alpha" {
+    try std.testing.expectEqual(
+        argb(f32, .premultiplied, f32){ .b = 0, .g = 0, .r = 0, .a = 0 },
+        argb(f32, .straight, f32).init(1, 1, 1, 0).convertAlphaModelTo(.premultiplied),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .premultiplied, f32){ .b = 0.5, .g = 0.5, .r = 0.5, .a = 0.5 },
+        argb(f32, .straight, f32).init(1, 1, 1, 0.5).convertAlphaModelTo(.premultiplied),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .premultiplied, f32){ .b = 0.25, .g = 0.25, .r = 0.25, .a = 0.5 },
+        argb(f32, .straight, f32).init(0.5, 0.5, 0.5, 0.5).convertAlphaModelTo(.premultiplied),
+    );
+}
 
-    pub const TRANSPARENT: @This() = .{ .b = @enumFromInt(0x00), .g = @enumFromInt(0x00), .r = @enumFromInt(0x00), .a = 0x00 };
-    pub const BLACK: @This() = .{ .b = @enumFromInt(0x00), .g = @enumFromInt(0x00), .r = @enumFromInt(0x00), .a = 0xFF };
-    pub const WHITE: @This() = .{ .b = @enumFromInt(0xFF), .g = @enumFromInt(0xFF), .r = @enumFromInt(0xFF), .a = 0xFF };
+test "convert premultiplied alpha to straight alpha" {
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(0, 0, 0, 0),
+        argb(f32, .premultiplied, f32).init(0, 0, 0, 0).convertAlphaModelTo(.straight),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(1, 1, 1, 0.5),
+        argb(f32, .premultiplied, f32).init(0.5, 0.5, 0.5, 0.5).convertAlphaModelTo(.straight),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(0.5, 0.5, 0.5, 0.5),
+        argb(f32, .premultiplied, f32).init(0.25, 0.25, 0.25, 0.5).convertAlphaModelTo(.straight),
+    );
+}
 
-    /// Necessary for seizer.image.Image type
-    pub fn fromArgb8888(encoded: argb8888) @This() {
-        return encoded;
-    }
+test "convert linear u8 alpha to linear f32 alpha" {
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(1, 1, 1, 1),
+        argb(f32, .straight, u8).init(1, 1, 1, 0xff).convertAlphaTo(f32),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(1, 1, 1, 0),
+        argb(f32, .straight, u8).init(1, 1, 1, 0x00).convertAlphaTo(f32),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, f32).init(1, 1, 1, 128.0 / 255.0),
+        argb(f32, .straight, u8).init(1, 1, 1, 0x80).convertAlphaTo(f32),
+    );
+}
 
-    /// Necessary for seizer.image.Image type
-    pub fn toArgb8888(this: @This()) argb8888 {
-        return this;
-    }
+test "convert linear f32 alpha to linear u8 alpha " {
+    try std.testing.expectEqual(
+        argb(f32, .straight, u8).init(1, 1, 1, 0xff),
+        argb(f32, .straight, f32).init(1, 1, 1, 1).convertAlphaTo(u8),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, u8).init(1, 1, 1, 0x00),
+        argb(f32, .straight, f32).init(1, 1, 1, 0).convertAlphaTo(u8),
+    );
+    try std.testing.expectEqual(
+        argb(f32, .straight, u8).init(1, 1, 1, 0x80),
+        argb(f32, .straight, f32).init(1, 1, 1, 128.0 / 255.0).convertAlphaTo(u8),
+    );
+}
 
-    /// Convert from sRGB encoded values to linear RGB values.
-    pub fn toArgb(this: @This(), comptime T: type) argb(T) {
-        return .{
-            .b = sRGB.decodeNaive(f32, this.b),
-            .g = sRGB.decodeNaive(f32, this.g),
-            .r = sRGB.decodeNaive(f32, this.r),
-            .a = @as(f32, @floatFromInt(this.a)) / std.math.maxInt(u8),
-        };
-    }
+// test "argb(f32).compositeSrcOverVec" {
+//     var prng = std.Random.DefaultPrng.init(438626002704109799);
 
-    pub fn tint(src_encoded: argb8888, mask_encoded: argb8888) argb8888 {
-        // TODO: Research tinting. Should the mask be sRGB encoded or linear?
-        const src: [4]u32 = .{
-            src_encoded.b.decodeU12(),
-            src_encoded.g.decodeU12(),
-            src_encoded.r.decodeU12(),
-            src_encoded.a,
-        };
-        const mask: [4]u32 = .{
-            mask_encoded.b.decodeU12(),
-            mask_encoded.g.decodeU12(),
-            mask_encoded.r.decodeU12(),
-            mask_encoded.a,
-        };
-        return argb8888{
-            .b = sRGB.encodeU12(@truncate((src[0] * mask[0]) >> 12)),
-            .g = sRGB.encodeU12(@truncate((src[1] * mask[1]) >> 12)),
-            .r = sRGB.encodeU12(@truncate((src[2] * mask[2]) >> 12)),
-            .a = @truncate((src[3] * mask[3]) >> 8),
-        };
-    }
+//     const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
 
-    pub fn compositeSrcOver(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
-        const dst: [3]u32 = .{
-            dst_encoded.b.decodeU12(),
-            dst_encoded.g.decodeU12(),
-            dst_encoded.r.decodeU12(),
-        };
-        const src: [3]u32 = .{
-            src_encoded.b.decodeU12(),
-            src_encoded.g.decodeU12(),
-            src_encoded.r.decodeU12(),
-        };
-        return argb8888{
-            .b = sRGB.encodeU12(@truncate(src[0] + ((dst[0] * (0xFF - src_encoded.a)) / 0xFF))),
-            .g = sRGB.encodeU12(@truncate(src[1] + ((dst[1] * (0xFF - src_encoded.a)) / 0xFF))),
-            .r = sRGB.encodeU12(@truncate(src[2] + ((dst[2] * (0xFF - src_encoded.a)) / 0xFF))),
-            .a = @truncate(@as(u16, src_encoded.a) + ((@as(u16, dst_encoded.a) * (0xFF - src_encoded.a)) / 0xFF)),
-        };
-    }
+//     var dst_array: [vector_len]argb(f32) = undefined;
+//     var src_array: [vector_len]argb(f32) = undefined;
+//     var result_array: [vector_len]argb(f32) = undefined;
+//     for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
+//         dst.* = argb(f32).fromRGBUnassociatedAlpha(
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//         );
+//         src.* = argb(f32).fromRGBUnassociatedAlpha(
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//         );
+//         res.* = dst.compositeSrcOver(src.*);
+//     }
 
-    test compositeSrcOver {
-        try std.testing.expectEqual(argb8888.TRANSPARENT, compositeSrcOver(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
-        try std.testing.expectEqual(argb8888.WHITE, compositeSrcOver(argb8888.WHITE, argb8888.TRANSPARENT));
-        try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.TRANSPARENT, argb8888.BLACK));
-        try std.testing.expectEqual(argb8888.BLACK, compositeSrcOver(argb8888.WHITE, argb8888.BLACK));
-    }
+//     const result_vec: [vector_len]argb(f32) = argb(f32).compositeSrcOverVec(vector_len, dst_array, src_array);
+//     try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec);
+// }
 
-    pub fn compositeXor(dst_encoded: argb8888, src_encoded: argb8888) argb8888 {
-        const dst_alpha_reciprocal: u32 = 0xFF - dst_encoded.a;
-        const src_alpha_reciprocal: u32 = 0xFF - src_encoded.a;
+// test "argb(f32).compositeSrcOverVecPlanar" {
+//     var prng = std.Random.DefaultPrng.init(438626002704109799);
 
-        const dst: [3]u32 = .{
-            dst_encoded.b.decodeU12(),
-            dst_encoded.g.decodeU12(),
-            dst_encoded.r.decodeU12(),
-        };
-        const src: [3]u32 = .{
-            src_encoded.b.decodeU12(),
-            src_encoded.g.decodeU12(),
-            src_encoded.r.decodeU12(),
-        };
+//     const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
 
-        const dst_blend = [3]u32{
-            dst[0] * src_alpha_reciprocal,
-            dst[1] * src_alpha_reciprocal,
-            dst[2] * src_alpha_reciprocal,
-        };
-        const src_blend = [3]u32{
-            src[0] * dst_alpha_reciprocal,
-            src[1] * dst_alpha_reciprocal,
-            src[2] * dst_alpha_reciprocal,
-        };
+//     var dst_array: [vector_len]argb(f32) = undefined;
+//     var src_array: [vector_len]argb(f32) = undefined;
+//     var result_array: [vector_len]argb(f32) = undefined;
+//     for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
+//         dst.* = argb(f32).fromRGBUnassociatedAlpha(
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//         );
+//         src.* = argb(f32).fromRGBUnassociatedAlpha(
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//             prng.random().float(f32),
+//         );
+//         res.* = dst.compositeSrcOver(src.*);
+//     }
 
-        return argb8888{
-            .b = sRGB.encodeU12(@truncate((src_blend[0] + dst_blend[0]) / 0xFF)),
-            .g = sRGB.encodeU12(@truncate((src_blend[1] + dst_blend[1]) / 0xFF)),
-            .r = sRGB.encodeU12(@truncate((src_blend[2] + dst_blend[2]) / 0xFF)),
-            .a = @truncate(((src_encoded.a * dst_alpha_reciprocal) + (dst_encoded.a * src_alpha_reciprocal)) / 0xFF),
-        };
-    }
+//     var dst_b_array: [vector_len]f32 = undefined;
+//     var dst_g_array: [vector_len]f32 = undefined;
+//     var dst_r_array: [vector_len]f32 = undefined;
+//     var dst_a_array: [vector_len]f32 = undefined;
+//     for (&dst_b_array, &dst_g_array, &dst_r_array, &dst_a_array, dst_array) |*b, *g, *r, *a, px| {
+//         b.* = px.b;
+//         g.* = px.g;
+//         r.* = px.r;
+//         a.* = px.a;
+//     }
+//     const dst_vec: argb(f32).Vectorized(vector_len) = .{
+//         .b = dst_b_array,
+//         .g = dst_g_array,
+//         .r = dst_r_array,
+//         .a = dst_a_array,
+//     };
 
-    test compositeXor {
-        try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.TRANSPARENT, argb8888.TRANSPARENT));
-        try std.testing.expectEqual(argb8888.WHITE, compositeXor(argb8888.WHITE, argb8888.TRANSPARENT));
-        try std.testing.expectEqual(argb8888.BLACK, compositeXor(argb8888.TRANSPARENT, argb8888.BLACK));
-        try std.testing.expectEqual(argb8888.TRANSPARENT, compositeXor(argb8888.WHITE, argb8888.BLACK));
-    }
+//     var src_b_array: [vector_len]f32 = undefined;
+//     var src_g_array: [vector_len]f32 = undefined;
+//     var src_r_array: [vector_len]f32 = undefined;
+//     var src_a_array: [vector_len]f32 = undefined;
+//     for (&src_b_array, &src_g_array, &src_r_array, &src_a_array, src_array) |*b, *g, *r, *a, px| {
+//         b.* = px.b;
+//         g.* = px.g;
+//         r.* = px.r;
+//         a.* = px.a;
+//     }
+//     const src_vec: argb(f32).Vectorized(vector_len) = .{
+//         .b = src_b_array,
+//         .g = src_g_array,
+//         .r = src_r_array,
+//         .a = src_a_array,
+//     };
 
-    // TODO: add testing based on microsofts float -> srgb specification https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm#FLOATtoSRGB
+//     const result_vec: argb(f32).Vectorized(vector_len) = argb(f32).compositeSrcOverVecPlanar(vector_len, dst_vec, src_vec);
 
-    test "u32 compositing introduces minimal error" {
-        // TODO: use std.testing.fuzz in 0.14
-        var prng = std.Random.DefaultPrng.init(789725665931731016);
-        const ITERATIONS = 1_000;
-        for (0..ITERATIONS) |_| {
-            // convert to argb8888 and back because we aren't interested in how shrinking the
-            // data into 8-bits reduces precision, just if the u12 algorithm introduces any
-            // extra error
-            const dst = argb(f64).fromRGBUnassociatedAlpha(
-                prng.random().float(f64),
-                prng.random().float(f64),
-                prng.random().float(f64),
-                prng.random().float(f64),
-            ).toArgb8888().toArgb();
-            const src = argb(f64).fromRGBUnassociatedAlpha(
-                prng.random().float(f64),
-                prng.random().float(f64),
-                prng.random().float(f64),
-                prng.random().float(f64),
-            ).toArgb8888().toArgb();
+//     var result_vec_array: [vector_len]argb(f32) = undefined;
+//     const result_b_array: [vector_len]f32 = result_vec.b;
+//     const result_g_array: [vector_len]f32 = result_vec.g;
+//     const result_r_array: [vector_len]f32 = result_vec.r;
+//     const result_a_array: [vector_len]f32 = result_vec.a;
+//     for (&result_vec_array, result_b_array, result_g_array, result_r_array, result_a_array) |*px, b, g, r, a| {
+//         px.* = .{
+//             .b = b,
+//             .g = g,
+//             .r = r,
+//             .a = a,
+//         };
+//     }
 
-            const result_using_u12 = argb8888.compositeSrcOver(dst.toArgb8888(), src.toArgb8888());
-            const result_using_f64 = dst.compositeSrcOver(src).toArgb8888();
-            try std.testing.expectEqual(result_using_f64, result_using_u12);
-        }
-    }
-};
+//     try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec_array);
+// }
 
-/// sRGB encoding/decoding functions.
-pub const sRGB = enum(u8) {
+/// An sRGB encoded value stored in 8-bits
+pub const sRGB8 = enum(u8) {
     _,
 
-    /// Converts a color component from a linear u12 value to a compressed 8-bit encoding.
-    pub fn encodeU12(component_linear: u12) sRGB {
-        return ENCODE_U12_LINEAR_TO_U8_SRGB[component_linear];
+    pub const ZERO: @This() = @enumFromInt(0);
+    pub const ONE: @This() = @enumFromInt(0xFF);
+
+    pub fn toOptical(this: @This(), Optical: type) Optical {
+        return switch (@typeInfo(Optical)) {
+            .Float => this.decodeNaive(Optical),
+            else => @compileError("Unsupported Optical type: " ++ @typeName(Optical)),
+        };
     }
 
-    test encodeU12 {
-        try std.testing.expectEqual(@as(sRGB, @enumFromInt(0)), encodeU12(0));
-        try std.testing.expectEqual(@as(sRGB, @enumFromInt(std.math.maxInt(u8))), encodeU12(std.math.maxInt(u12)));
-    }
-
-    /// Converts a color component from a compressed 8-bit encoding to a linear u12 value.
-    pub fn decodeU12(component_srgb: sRGB) u12 {
-        return DECODE_U8_SRGB_TO_U12_LINEAR[@intFromEnum(component_srgb)];
-    }
-
-    test decodeU12 {
-        try std.testing.expectEqual(@as(u12, 0), decodeU12(@enumFromInt(0)));
-        try std.testing.expectEqual(@as(u12, std.math.maxInt(u12)), decodeU12(@enumFromInt(std.math.maxInt(u8))));
+    pub fn fromOptical(Optical: type, optical: Optical) @This() {
+        return switch (@typeInfo(Optical)) {
+            .Float => encodeFast(Optical, optical),
+            else => @compileError("Unsupported Optical type: " ++ @typeName(Optical)),
+        };
     }
 
     /// Converts a color component from a linear 0..1 space to a compressed 8-bit encoding.
     ///
     /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
-    pub fn encodeFast(comptime F: type, component_linear: F) sRGB {
+    pub fn encodeFast(comptime F: type, component_linear: F) sRGB8 {
         const max_value = comptime (1.0 - std.math.floatEps(f32));
         const min_value = comptime std.math.pow(f32, 2, -13);
         // written as `!(>)` because of nans
-        var in = component_linear;
+        var in: f32 = @floatCast(component_linear);
         if (!(component_linear > min_value)) {
             in = min_value;
         }
@@ -527,10 +612,6 @@ pub const sRGB = enum(u8) {
         const entry = TO_SRGB8_TABLE[(bits - @as(u32, @bitCast(min_value))) >> 20];
         const bias = (entry >> 16) << 9;
         const scale = entry & 0xffff;
-
-        // const srgb_float = std.math.pow(F, component_linear, 1.0 / 2.2);
-        // const srgb_int: u8 = @intFromFloat(srgb_float * std.math.maxInt(u8));
-        // std.math.lerp(, , )
 
         // lerp
         const t = (bits >> 12) & 0xff;
@@ -554,18 +635,51 @@ pub const sRGB = enum(u8) {
         0x5e0c0a23, 0x631c0980, 0x67db08f6, 0x6c55087f, 0x70940818, 0x74a007bd, 0x787d076c, 0x7c330723,
     };
 
+    const DECODE_U8_SRGB_TO_U12_LINEAR = createDecodeTable(u12);
+    fn createDecodeTable(Int: type) [std.math.maxInt(u8) + 1]Int {
+        @setEvalBranchQuota(100_000);
+        var table: [std.math.maxInt(u8) + 1]Int = undefined;
+        for (table[0..], 0..) |*val, idx| {
+            val.* = @as(u12, @intFromFloat(decodeNaive(f64, @enumFromInt(idx)) * std.math.maxInt(Int)));
+        }
+        return table;
+    }
+
+    const ENCODE_U12_LINEAR_TO_U8_SRGB = createEncodeTable(u12);
+    fn createEncodeTable(Int: type) [std.math.maxInt(Int) + 1]sRGB8 {
+        @setEvalBranchQuota(1_000_000);
+        var table: [std.math.maxInt(Int) + 1]sRGB8 = undefined;
+        for (table[0..], 0..) |*val, idx| {
+            val.* = encodeNaive(f64, @as(f64, @floatFromInt(idx)) / std.math.maxInt(Int));
+        }
+        return table;
+    }
+
     /// Converts a color component from a linear 0..1 space to a compressed 8-bit encoding.
     ///
     /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
-    pub fn encodeNaive(comptime F: type, component_linear: F) sRGB {
+    pub fn encodeNaive(comptime F: type, component_linear: F) sRGB8 {
         const srgb_float = linearToSRGBFloat(F, component_linear);
         const srgb_int: u8 = @intFromFloat(srgb_float * std.math.maxInt(u8));
         return @enumFromInt(srgb_int);
     }
 
     test encodeNaive {
-        try std.testing.expectEqual(@as(sRGB, @enumFromInt(0x00)), encodeNaive(f64, 0.0));
-        try std.testing.expectEqual(@as(sRGB, @enumFromInt(0xFF)), encodeNaive(f64, 1.0));
+        try std.testing.expectEqual(@as(sRGB8, @enumFromInt(0x00)), encodeNaive(f64, 0.0));
+        try std.testing.expectEqual(@as(sRGB8, @enumFromInt(0xFF)), encodeNaive(f64, 1.0));
+    }
+
+    /// Converts a color component from a compressed 8-bit encoding into linear values.
+    ///
+    /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
+    pub fn decodeNaive(component_electronic_u8: sRGB8, comptime F: type) F {
+        const component_electronic: F = @as(F, @floatFromInt(@intFromEnum(component_electronic_u8))) / std.math.maxInt(u8);
+        if (component_electronic <= 0.04045) {
+            // lower end of the sRGB encoding is linear
+            return component_electronic / 12.92;
+        }
+        // higher end of value range is exponential
+        return std.math.pow(F, (component_electronic + 0.055) / 1.055, 2.4);
     }
 
     /// Converts a color component from a linear 0..1 space to a compressed 8-bit encoding.
@@ -582,62 +696,12 @@ pub const sRGB = enum(u8) {
             return 1.0;
         }
     }
-
-    const DECODE_U8_SRGB_TO_U12_LINEAR = createDecodeTable(u12);
-    fn createDecodeTable(Int: type) [std.math.maxInt(u8) + 1]Int {
-        @setEvalBranchQuota(100_000);
-        var table: [std.math.maxInt(u8) + 1]Int = undefined;
-        for (table[0..], 0..) |*val, idx| {
-            val.* = @as(u12, @intFromFloat(decodeNaive(f64, @enumFromInt(idx)) * std.math.maxInt(Int)));
-        }
-        return table;
-    }
-
-    const ENCODE_U12_LINEAR_TO_U8_SRGB = createEncodeTable(u12);
-    fn createEncodeTable(Int: type) [std.math.maxInt(Int) + 1]sRGB {
-        @setEvalBranchQuota(1_000_000);
-        var table: [std.math.maxInt(Int) + 1]sRGB = undefined;
-        for (table[0..], 0..) |*val, idx| {
-            val.* = encodeNaive(f64, @as(f64, @floatFromInt(idx)) / std.math.maxInt(Int));
-        }
-        return table;
-    }
-
-    /// Converts a color component from a compressed 8-bit encoding into linear values.
-    ///
-    /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
-    pub fn decodeNaive(comptime F: type, component_electronic_u8: sRGB) F {
-        const component_electronic: F = @as(F, @floatFromInt(@intFromEnum(component_electronic_u8))) / std.math.maxInt(u8);
-        if (component_electronic <= 0.04045) {
-            // lower end of the sRGB encoding is linear
-            return component_electronic / 12.92;
-        }
-        // higher end of value range is exponential
-        return std.math.pow(F, (component_electronic + 0.055) / 1.055, 2.4);
-    }
-
-    test "u12 introduces minimal error" {
-        // TODO: use std.testing.fuzz in 0.14
-        var prng = std.Random.DefaultPrng.init(6431592643209124545);
-        const ITERATIONS = 10_000;
-        for (0..ITERATIONS) |_| {
-            const original_linear = prng.random().float(f64);
-            const encoded = encodeNaive(f64, original_linear);
-
-            const decoded_f64 = decodeNaive(f64, encoded);
-            const decoded_u12 = decodeU12(encoded);
-            const decoded_u12_as_f64 = @as(f64, @floatFromInt(decoded_u12)) / std.math.maxInt(u12);
-
-            try std.testing.expectApproxEqRel(decoded_f64, decoded_u12_as_f64, 1e-2);
-        }
-    }
 };
 
 comptime {
     if (builtin.is_test) {
         _ = argb;
-        _ = argb8888;
-        _ = sRGB;
+        _ = sRGB8;
     }
 }
 

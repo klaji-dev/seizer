@@ -1,6 +1,6 @@
 wl_buffer: shimizu.Proxy(shimizu.core.wl_buffer),
 size: [2]u32,
-pixels: [*]seizer.color.argb8888,
+pixels: [*]seizer.color.argb(seizer.color.sRGB8, .premultiplied, u8),
 
 pub fn clear(this: @This(), color: seizer.color.argb(f64)) void {
     @memset(this.pixels[0 .. this.size[0] * this.size[1]], color.toArgb8888());
