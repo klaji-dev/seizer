@@ -141,6 +141,12 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
             .decoration_mode = .client_side,
         },
 
+        .framebuffer = .{
+            .tiles = undefined,
+            .size_px = .{ 0, 0 },
+            .start_px = .{ 0, 0 },
+            .end_px = .{ 0, 0 },
+        },
         .swapchain = .{},
         .on_render_listener = null,
         .on_input_listener = null,

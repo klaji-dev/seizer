@@ -8,13 +8,22 @@ interface: *const Interface,
 pub const Interface = struct {
     /// The size of the renderable area
     size: *const fn (?*anyopaque) [2]f64,
-    blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.image.Image(seizer.color.argb8888)) void,
-    texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Image(seizer.color.argb8888), options: RectOptions) void,
+    clear: *const fn (?*anyopaque, seizer.color.argb(f64)) void,
+    blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.image.Image(seizer.color.argb(f32))) void,
+    texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Image(seizer.color.argb(f32)), options: RectOptions) void,
     fill_rect: *const fn (?*anyopaque, pos: [2]f64, size: [2]f64, options: RectOptions) void,
     line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };
 
-pub fn blit(this: @This(), pos: [2]f64, image: seizer.image.Image(seizer.color.argb8888)) void {
+pub fn size(this: @This()) [2]f64 {
+    return this.interface.size(this.ptr);
+}
+
+pub fn clear(this: @This(), color: seizer.color.argb(f64)) void {
+    return this.interface.clear(this.ptr, color);
+}
+
+pub fn blit(this: @This(), pos: [2]f64, image: seizer.image.Image(seizer.color.argb(f32))) void {
     return this.interface.blit(this.ptr, pos, image);
 }
 
@@ -23,12 +32,12 @@ pub const RectOptions = struct {
     color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
 };
 
-pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Image(seizer.color.argb8888), options: RectOptions) void {
+pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Image(seizer.color.argb(f32)), options: RectOptions) void {
     return this.interface.texture_rect(this.ptr, dst_pos, dst_size, image, options);
 }
 
-pub fn fillRect(this: @This(), pos: [2]f64, size: [2]f64, options: RectOptions) void {
-    return this.interface.fill_rect(this.ptr, pos, size, options);
+pub fn fillRect(this: @This(), pos: [2]f64, rect_size: [2]f64, options: RectOptions) void {
+    return this.interface.fill_rect(this.ptr, pos, rect_size, options);
 }
 
 pub const LineOptions = struct {
@@ -79,12 +88,12 @@ pub const NinePatch = struct {
     }
 };
 
-pub fn ninePatch(this: @This(), pos: [2]f64, size: [2]f64, image: seizer.image.Image(seizer.color.argb8888), inset: geometry.Inset(u32), options: NinePatch.Options) void {
+pub fn ninePatch(this: @This(), pos: [2]f64, ninepatch_size: [2]f64, image: seizer.image.Image(seizer.color.argb(f32)), inset: geometry.Inset(u32), options: NinePatch.Options) void {
     const images = NinePatch.images(.{ .image = image, .inset = inset });
     const scaled_inset = inset.intToFloat(f64).scale(options.scale);
 
-    const x: [4]f64 = .{ pos[0], pos[0] + scaled_inset.min[0], pos[0] + size[0] - scaled_inset.min[0], pos[0] + size[0] };
-    const y: [4]f64 = .{ pos[1], pos[1] + scaled_inset.min[1], pos[1] + size[1] - scaled_inset.min[1], pos[1] + size[1] };
+    const x: [4]f64 = .{ pos[0], pos[0] + scaled_inset.min[0], pos[0] + ninepatch_size[0] - scaled_inset.min[0], pos[0] + ninepatch_size[0] };
+    const y: [4]f64 = .{ pos[1], pos[1] + scaled_inset.min[1], pos[1] + ninepatch_size[1] - scaled_inset.min[1], pos[1] + ninepatch_size[1] };
     const w: [3]f64 = .{ x[1] - x[0], x[2] - x[1], x[3] - x[2] };
     const h: [3]f64 = .{ y[1] - y[0], y[2] - y[1], y[3] - y[2] };
 
@@ -214,165 +223,6 @@ fn writeGlyph(ctx: WriteGlyphContext, item: Font.TextLayout.Item) void {
         },
     );
 }
-
-/// A transformed canvas
-pub const Transformed = struct {
-    canvas: *Canvas,
-    transform: [4][4]f64,
-
-    pub fn rect(this: @This(), pos: [2]f64, size: [2]f64, options: RectOptions) void {
-        this.canvas.addVertices(this.pipeline, this.extra_uniforms, this.transform, options.texture orelse this.canvas.blank_texture, this.scissor, &.{
-            // triangle 1
-            .{
-                .pos = pos ++ [1]f64{options.depth},
-                .uv = options.uv.min,
-                .color = options.color,
-            },
-            .{
-                .pos = .{
-                    pos[0] + size[0],
-                    pos[1],
-                    options.depth,
-                },
-                .uv = .{
-                    options.uv.max[0],
-                    options.uv.min[1],
-                },
-                .color = options.color,
-            },
-            .{
-                .pos = .{
-                    pos[0],
-                    pos[1] + size[1],
-                    options.depth,
-                },
-                .uv = .{
-                    options.uv.min[0],
-                    options.uv.max[1],
-                },
-                .color = options.color,
-            },
-
-            // triangle 2
-            .{
-                .pos = .{
-                    pos[0] + size[0],
-                    pos[1] + size[1],
-                    options.depth,
-                },
-                .uv = options.uv.max,
-                .color = options.color,
-            },
-            .{
-                .pos = .{
-                    pos[0],
-                    pos[1] + size[1],
-                    options.depth,
-                },
-                .uv = .{
-                    options.uv.min[0],
-                    options.uv.max[1],
-                },
-                .color = options.color,
-            },
-            .{
-                .pos = .{
-                    pos[0] + size[0],
-                    pos[1],
-                    options.depth,
-                },
-                .uv = .{
-                    options.uv.max[0],
-                    options.uv.min[1],
-                },
-                .color = options.color,
-            },
-        });
-    }
-
-    pub fn line(this: @This(), pos1: [2]f64, pos2: [2]f64, options: LineOptions) void {
-        const half_width = options.width / 2;
-        const half_length = geometry.vec.magnitude(2, f64, .{
-            pos2[0] - pos1[0],
-            pos2[1] - pos1[1],
-        }) / 2;
-
-        const forward = geometry.vec.normalize(2, f64, .{
-            pos2[0] - pos1[0],
-            pos2[1] - pos1[1],
-        });
-        const right = geometry.vec.normalize(2, f64, .{
-            forward[1],
-            -forward[0],
-        });
-        const midpoint = [2]f64{
-            (pos1[0] + pos2[0]) / 2,
-            (pos1[1] + pos2[1]) / 2,
-        };
-
-        const back_left = [2]f64{
-            midpoint[0] - half_length * forward[0] - half_width * right[0],
-            midpoint[1] - half_length * forward[1] - half_width * right[1],
-        };
-        const back_right = [2]f64{
-            midpoint[0] - half_length * forward[0] + half_width * right[0],
-            midpoint[1] - half_length * forward[1] + half_width * right[1],
-        };
-        const fore_left = [2]f64{
-            midpoint[0] + half_length * forward[0] - half_width * right[0],
-            midpoint[1] + half_length * forward[1] - half_width * right[1],
-        };
-        const fore_right = [2]f64{
-            midpoint[0] + half_length * forward[0] + half_width * right[0],
-            midpoint[1] + half_length * forward[1] + half_width * right[1],
-        };
-
-        this.canvas.addVertices(this.pipeline, this.extra_uniforms, this.transform, this.canvas.blank_texture, this.scissor, &.{
-            .{
-                .pos = back_left ++ [1]f64{options.depth},
-                .uv = .{ 0, 0 },
-                .color = options.color,
-            },
-            .{
-                .pos = fore_left ++ [1]f64{options.depth},
-                .uv = .{ 0, 0 },
-                .color = options.color,
-            },
-            .{
-                .pos = back_right ++ [1]f64{options.depth},
-                .uv = .{ 0, 0 },
-                .color = options.color,
-            },
-
-            .{
-                .pos = back_right ++ [1]f64{options.depth},
-                .uv = .{ 0, 0 },
-                .color = options.color,
-            },
-            .{
-                .pos = fore_left ++ [1]f64{options.depth},
-                .uv = .{ 0, 0 },
-                .color = options.color,
-            },
-            .{
-                .pos = fore_right ++ [1]f64{options.depth},
-                .uv = .{ 0, 0 },
-                .color = options.color,
-            },
-        });
-    }
-
-    pub fn transformed(this: @This(), transform: [4][4]f64) Transformed {
-        return Transformed{
-            .render_buffer = this.render_buffer,
-            .canvas = this.canvas,
-            .transform = geometry.mat4.mul(f64, this.transform, transform),
-            .scissor = this.scissor,
-            .pipeline = this.pipeline,
-            .extra_uniforms = this.extra_uniforms,
-        };
-    }
-};
 
 const log = std.log.scoped(.Canvas);
 const std = @import("std");

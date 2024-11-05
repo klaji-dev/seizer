@@ -162,86 +162,86 @@ pub fn Image(Pixel: type) type {
         }
 
         pub fn resize(dst: @This(), src: @This()) void {
-            const dst_size = [2]f64{
+            const dst_size = [2]f32{
                 @floatFromInt(dst.size[0]),
                 @floatFromInt(dst.size[1]),
             };
 
-            const src_size = [2]f64{
+            const src_size = [2]f32{
                 @floatFromInt(src.size[0]),
                 @floatFromInt(src.size[1]),
             };
 
             for (0..dst.size[1]) |dst_y| {
                 for (0..dst.size[0]) |dst_x| {
-                    const uv = [2]f64{
-                        @as(f64, @floatFromInt(dst_x)) / dst_size[0],
-                        @as(f64, @floatFromInt(dst_y)) / dst_size[1],
+                    const uv = [2]f32{
+                        @as(f32, @floatFromInt(dst_x)) / dst_size[0],
+                        @as(f32, @floatFromInt(dst_y)) / dst_size[1],
                     };
-                    const src_pos = [2]f64{
+                    const src_pos = [2]f32{
                         uv[0] * src_size[0] - 0.5,
                         uv[1] * src_size[1] - 0.5,
                     };
                     const src_columnf = @floor(src_pos[0]);
-                    const col_indices = [4]f64{
+                    const col_indices = [4]f32{
                         @floor(src_columnf - 1),
                         @floor(src_columnf - 0),
                         @floor(src_columnf + 1),
                         @floor(src_columnf + 2),
                     };
                     const src_rowf = @floor(src_pos[1]);
-                    const row_indices = [4]f64{
+                    const row_indices = [4]f32{
                         @floor(src_rowf - 1),
                         @floor(src_rowf - 0),
                         @floor(src_rowf + 1),
                         @floor(src_rowf + 2),
                     };
 
-                    const kernel_x: @Vector(4, f64) = .{
+                    const kernel_x: @Vector(4, f32) = .{
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[0] - src_pos[0]),
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[1] - src_pos[0]),
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[2] - src_pos[0]),
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, col_indices[3] - src_pos[0]),
                     };
-                    const kernel_y: @Vector(4, f64) = .{
+                    const kernel_y: @Vector(4, f32) = .{
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[0] - src_pos[1]),
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[1] - src_pos[1]),
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[2] - src_pos[1]),
                         cubicFilter(1.0 / 3.0, 1.0 / 3.0, row_indices[3] - src_pos[1]),
                     };
 
-                    var row_interpolations: [4][4]f64 = undefined;
+                    var row_interpolations: [4][4]f32 = undefined;
                     for (0..4, row_indices) |interpolation_idx, row_idxf| {
                         // TODO: set out of bounds pixels to transparent instead of repeating row
                         const row_idx: u32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1] - 1));
                         // transpose so we can multiply by each color channel separately
-                        const src_row_pixels = seizer.geometry.mat.transpose(4, 4, f64, [4][4]f64{
-                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
-                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
-                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
-                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
+                        const src_row_pixels = seizer.geometry.mat.transpose(4, 4, f32, [4][4]f32{
+                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0] - 1)), row_idx }).toArray(),
+                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[1], 0, src_size[0] - 1)), row_idx }).toArray(),
+                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[2], 0, src_size[0] - 1)), row_idx }).toArray(),
+                            src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[3], 0, src_size[0] - 1)), row_idx }).toArray(),
                         });
 
                         for (0..4, src_row_pixels[0..4]) |interpolation_channel, channel| {
-                            const channel_v: @Vector(4, f64) = channel;
+                            const channel_v: @Vector(4, f32) = channel;
                             row_interpolations[interpolation_channel][interpolation_idx] = @reduce(.Add, kernel_x * channel_v);
                         }
                     }
 
-                    var out_pixel: [4]f64 = undefined;
+                    var out_pixel: [4]f32 = undefined;
 
                     for (out_pixel[0..], row_interpolations[0..]) |*out_channel, channel| {
-                        const channel_v: @Vector(4, f64) = channel;
+                        const channel_v: @Vector(4, f32) = channel;
                         out_channel.* = std.math.clamp(@reduce(.Add, kernel_y * channel_v), 0, 1);
                     }
 
-                    dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argb(f64).fromArray(out_pixel).toArgb8888());
+                    dst.setPixel(.{ @intCast(dst_x), @intCast(dst_y) }, seizer.color.argb(f32).fromArray(out_pixel));
                 }
             }
         }
 
         // Returns the amount a sample should influence the output result
-        pub fn cubicFilter(B: f64, C: f64, x: f64) f64 {
+        pub fn cubicFilter(B: f32, C: f32, x: f32) f32 {
             const x1 = @abs(x);
             const x2 = @abs(x) * @abs(x);
             const x3 = @abs(x) * @abs(x) * @abs(x);
@@ -284,7 +284,34 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             };
         }
 
+        pub fn ensureSize(this: *@This(), allocator: std.mem.Allocator, new_size_px: [2]u32) !void {
+            const new_size_tiles = sizeInTiles(new_size_px);
+
+            if (this.size_px[0] == 0 and this.size_px[1] == 0) {
+                const new_tiles = try allocator.alloc(Tile, new_size_tiles[0] * new_size_tiles[1]);
+                this.tiles = new_tiles.ptr;
+                this.size_px = new_size_px;
+                this.start_px = .{ 0, 0 };
+                this.end_px = new_size_px;
+                this.clear(Pixel.BLACK);
+                return;
+            }
+
+            if (new_size_px[0] <= this.size_px[0] and new_size_px[1] <= this.size_px[1]) return;
+            const size_tiles = sizeInTiles(this.size_px);
+
+            const tiles = this.tiles[0 .. size_tiles[0] * size_tiles[1]];
+            const new_tiles = try allocator.realloc(tiles, new_size_tiles[0] * new_size_tiles[1]);
+
+            this.tiles = new_tiles.ptr;
+            this.size_px = new_size_px;
+            this.start_px = .{ 0, 0 };
+            this.end_px = new_size_px;
+            this.clear(Pixel.BLACK);
+        }
+
         pub fn free(this: @This(), allocator: std.mem.Allocator) void {
+            if (this.size_px[0] == 0 and this.size_px[1] == 0) return;
             const size_in_tiles = sizeInTiles(this.size_px);
             allocator.free(this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]);
         }
@@ -797,12 +824,12 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
 
             for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
                 for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0]) |tile_x| {
-                    const tile_index = tile_y * size_in_tiles + tile_x;
+                    const tile_index: u32 = @intCast(tile_y * size_in_tiles[0] + tile_x);
                     const tile = &this.tiles[tile_index];
 
                     const tile_pos_in_px = [2]u32{
-                        tile_x * tile_size[0],
-                        tile_y * tile_size[1],
+                        @intCast(tile_x * tile_size[0]),
+                        @intCast(tile_y * tile_size[1]),
                     };
 
                     const min_in_tile = [2]u32{
@@ -810,8 +837,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                         min_offset[1] -| tile_pos_in_px[1],
                     };
                     const max_in_tile = [2]u32{
-                        (max_tile_pos[0] -| max_offset[0]) % tile_size[0],
-                        (max_tile_pos[1] -| max_offset[1]) % tile_size[1],
+                        (max_offset[0] -| max_offset[0]) % tile_size[0],
+                        (max_offset[1] -| max_offset[1]) % tile_size[1],
                     };
 
                     for (min_in_tile[1]..max_in_tile[1]) |y| {
@@ -836,7 +863,14 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             var err = delta[0] + delta[1];
             var pos = a;
             while (true) {
-                this.setPixel(pos, Pixel.compositeSrcOver(this.getPixel(pos), color));
+                const is_in_bounds = [2]bool{
+                    pos[0] >= 0 and pos[0] < this.size_px[0],
+                    pos[1] >= 0 and pos[1] < this.size_px[1],
+                };
+                if (is_in_bounds[0] and is_in_bounds[1]) {
+                    this.setPixel(.{ @intCast(pos[0]), @intCast(pos[1]) }, color);
+                }
+
                 if (pos[0] == b[0] and pos[1] == b[1]) break;
                 const err2 = 2 * err;
                 if (err2 >= delta[1]) {
@@ -874,7 +908,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
 
         fn tilePosFromOffset(this: @This(), offset: [2]u32) TilePos {
             std.debug.assert(offset[0] >= 0 and offset[1] >= 0);
-            std.debug.assert(offset[0] < this.end_px[0] - this.start_px[0] and offset[1] < this.end_px[1] - this.start_px[1]);
+            std.debug.assert(offset[0] <= this.end_px[0] - this.start_px[0] and offset[1] <= this.end_px[1] - this.start_px[1]);
             const pos = [2]u32{
                 @intCast(this.start_px[0] + offset[0]),
                 @intCast(this.start_px[1] + offset[1]),

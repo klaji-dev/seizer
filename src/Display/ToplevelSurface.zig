@@ -14,6 +14,9 @@ frame_callback_listener: shimizu.Listener,
 current_configuration: Configuration,
 new_configuration: Configuration,
 
+/// This framebuffer is used for compositing. The buffer that will be sent to the compositor
+/// will need to be have a linear layout and be `argb8888` encoded.
+framebuffer: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)),
 swapchain: Swapchain,
 on_render_listener: ?*OnRenderListener,
 on_input_listener: ?*OnInputListener,
@@ -61,6 +64,8 @@ pub fn deinit(this: *@This()) void {
     //     frame_callback.userdata = null;
     //     frame_callback.on_event = null;
     // }
+    this.framebuffer.free(this.display.allocator);
+    this.swapchain.deinit();
 }
 
 pub fn setOnRender(this: *@This(), on_render_listener: *OnRenderListener, callback: OnRenderListener.CallbackFn, userdata: ?*anyopaque) void {
@@ -79,13 +84,12 @@ pub fn setOnInput(this: *@This(), input_listener: *OnInputListener, callback: On
     this.on_input_listener = input_listener;
 }
 
-pub fn getBuffer(this: *@This()) !Display.Buffer {
-    if (!std.mem.eql(u32, &this.swapchain.size, &this.current_configuration.window_size)) {
-        this.swapchain.deinit();
-        try this.swapchain.allocate(.{ .connection = &this.display.connection, .id = this.display.globals.wl_shm.? }, this.current_configuration.window_size, 3);
-    }
-
-    return try this.swapchain.getBuffer();
+pub fn canvas(this: *@This()) !seizer.Canvas {
+    try this.framebuffer.ensureSize(this.display.allocator, this.current_configuration.window_size);
+    return .{
+        .ptr = this,
+        .interface = CANVAS_INTERFACE,
+    };
 }
 
 pub fn requestAnimationFrame(this: *@This()) !void {
@@ -98,7 +102,20 @@ pub fn requestAnimationFrame(this: *@This()) !void {
     this.frame_callback = frame_callback.id;
 }
 
-pub fn present(this: *@This(), buffer: Display.Buffer) !void {
+pub fn present(this: *@This()) !void {
+    if (!std.mem.eql(u32, &this.swapchain.size, &this.current_configuration.window_size)) {
+        this.swapchain.deinit();
+        try this.swapchain.allocate(.{ .connection = &this.display.connection, .id = this.display.globals.wl_shm.? }, this.current_configuration.window_size, 3);
+    }
+
+    const buffer = try this.swapchain.getBuffer();
+    for (0..buffer.size[1]) |y| {
+        const row = buffer.pixels[y * buffer.size[0] ..][0..buffer.size[0]];
+        for (row, 0..) |*px, x| {
+            px.* = this.framebuffer.getPixel(.{ @intCast(x), @intCast(y) }).toArgb8888();
+        }
+    }
+
     try this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .attach, .{
         .x = 0,
         .y = 0,
@@ -111,6 +128,121 @@ pub fn present(this: *@This(), buffer: Display.Buffer) !void {
         .height = @intCast(buffer.size[1]),
     });
     try this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .commit, .{});
+}
+
+// Canvas implementation
+
+const CANVAS_INTERFACE: *const seizer.Canvas.Interface = &.{
+    .size = canvas_size,
+    .clear = canvas_clear,
+    .blit = canvas_blit,
+    .texture_rect = canvas_textureRect,
+    .fill_rect = canvas_fillRect,
+    .line = canvas_line,
+};
+
+pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    return .{ @floatFromInt(this.current_configuration.window_size[0]), @floatFromInt(this.current_configuration.window_size[1]) };
+}
+
+pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argb(f64)) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    this.framebuffer.clear(color.floatCast(f32));
+}
+
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argb(f32))) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+
+    const pos_i = [2]i32{
+        @intFromFloat(@floor(pos[0])),
+        @intFromFloat(@floor(pos[1])),
+    };
+    const size_i = [2]i32{
+        @intCast(this.current_configuration.window_size[0]),
+        @intCast(this.current_configuration.window_size[1]),
+    };
+
+    if (pos_i[0] + size_i[0] <= 0 or pos_i[1] + size_i[1] <= 0) return;
+    if (pos_i[0] >= size_i[0] or pos_i[1] >= size_i[1]) return;
+
+    const src_size = [2]u32{
+        @min(src_image.size[0], @as(u32, @intCast(size_i[0] - pos_i[0]))),
+        @min(src_image.size[1], @as(u32, @intCast(size_i[1] - pos_i[1]))),
+    };
+
+    const src_offset = [2]u32{
+        if (pos_i[0] < 0) @intCast(-pos_i[0]) else 0,
+        if (pos_i[1] < 0) @intCast(-pos_i[1]) else 0,
+    };
+    const dest_offset = [2]u32{
+        @intCast(@max(pos_i[0], 0)),
+        @intCast(@max(pos_i[1], 0)),
+    };
+
+    const src = src_image.slice(src_offset, src_size);
+    const dest = this.framebuffer.slice(dest_offset, src_size);
+
+    dest.compositeLinear(src);
+}
+
+pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, options: seizer.Canvas.RectOptions) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
+    const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
+
+    this.framebuffer.drawFillRect(a, b, options.color.floatCast(f32));
+}
+
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argb(f32)), options: seizer.Canvas.RectOptions) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+
+    const start_pos = [2]u32{
+        @min(@as(u32, @intFromFloat(@floor(@max(@min(dst_pos[0], dst_pos[0] + dst_size[0]), 0)))), this.current_configuration.window_size[0]),
+        @min(@as(u32, @intFromFloat(@floor(@max(@min(dst_pos[1], dst_pos[1] + dst_size[1]), 0)))), this.current_configuration.window_size[1]),
+    };
+    const end_pos = [2]u32{
+        @min(@as(u32, @intFromFloat(@floor(@max(dst_pos[0], dst_pos[0] + dst_size[0], 0)))), this.current_configuration.window_size[0]),
+        @min(@as(u32, @intFromFloat(@floor(@max(dst_pos[1], dst_pos[1] + dst_size[1], 0)))), this.current_configuration.window_size[1]),
+    };
+
+    const src_size = [2]f64{
+        @floatFromInt(src_image.size[0]),
+        @floatFromInt(src_image.size[1]),
+    };
+
+    const color_mask = options.color.floatCast(f32);
+
+    for (start_pos[1]..end_pos[1]) |y| {
+        for (start_pos[0]..end_pos[0]) |x| {
+            const pos = [2]f64{ @floatFromInt(x), @floatFromInt(y) };
+            const texture_coord = [2]f64{
+                std.math.clamp(((pos[0] - dst_pos[0]) / dst_size[0]) * src_size[0], 0, src_size[0]),
+                std.math.clamp(((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1], 0, src_size[1]),
+            };
+            const dst_pixel = this.framebuffer.getPixel(.{ @intCast(x), @intCast(y) });
+            const src_pixel = src_image.getPixel(.{
+                @intFromFloat(texture_coord[0]),
+                @intFromFloat(texture_coord[1]),
+            });
+            const src_pixel_tint = src_pixel.tint(color_mask);
+            this.framebuffer.setPixel(.{ @intCast(x), @intCast(y) }, dst_pixel.compositeSrcOver(src_pixel_tint));
+        }
+    }
+}
+
+pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {
+    const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    const start_i = [2]i32{
+        @intFromFloat(@floor(start[0])),
+        @intFromFloat(@floor(start[1])),
+    };
+    const end_i = [2]i32{
+        @intFromFloat(@floor(end[0])),
+        @intFromFloat(@floor(end[1])),
+    };
+
+    this.framebuffer.drawLine(start_i, end_i, options.color.floatCast(f32));
 }
 
 // shimizu callback functions
