@@ -119,29 +119,6 @@ pub fn Image(Pixel: type) type {
         }
 
         pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
-            if (a[0] == b[0]) {
-                var y = @min(a[1], b[1]);
-                const end_y = @max(a[1], b[1]);
-                while (y <= end_y) : (y += 1) {
-                    this.setPixel(.{ a[0], y }, color);
-                }
-                return;
-            } else if (a[1] == b[1]) {
-                if (a[1] < 0 or a[1] >= this.size[1]) {
-                    return;
-                }
-                const size_i = [2]i32{ @intCast(this.size[0]), @intCast(this.size[1]) };
-                const x_min: u32 = @intCast(std.math.clamp(@min(a[0], b[0]), 0, size_i[0]));
-                const x_max: u32 = @intCast(std.math.clamp(@max(a[0], b[0]) + 1, 0, size_i[0]));
-                const y: u32 = @intCast(a[1]);
-
-                const start_of_row: u32 = @intCast(y * this.stride);
-                const row_buffer = this.pixels[start_of_row..][x_min..x_max];
-                @memset(row_buffer, color);
-
-                return;
-            }
-
             const delta = [2]i32{
                 @intCast(@abs(b[0] - a[0])),
                 -@as(i32, @intCast(@abs(b[1] - a[1]))),
@@ -154,7 +131,13 @@ pub fn Image(Pixel: type) type {
             var err = delta[0] + delta[1];
             var pos = a;
             while (true) {
-                this.setPixel(pos, color);
+                const is_in_bounds = [2]bool{
+                    pos[0] >= 0 and pos[0] < this.size[0],
+                    pos[1] >= 0 and pos[1] < this.size[1],
+                };
+                if (is_in_bounds[0] and is_in_bounds[1]) {
+                    this.setPixel(.{ @intCast(pos[0]), @intCast(pos[1]) }, color);
+                }
                 if (pos[0] == b[0] and pos[1] == b[1]) break;
                 const err2 = 2 * err;
                 if (err2 >= delta[1]) {
@@ -230,7 +213,7 @@ pub fn Image(Pixel: type) type {
                     var row_interpolations: [4][4]f64 = undefined;
                     for (0..4, row_indices) |interpolation_idx, row_idxf| {
                         // TODO: set out of bounds pixels to transparent instead of repeating row
-                        const row_idx: i32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1] - 1));
+                        const row_idx: u32 = @intFromFloat(std.math.clamp(row_idxf, 0, src_size[1] - 1));
                         // transpose so we can multiply by each color channel separately
                         const src_row_pixels = seizer.geometry.mat.transpose(4, 4, f64, [4][4]f64{
                             src.getPixel(.{ @intFromFloat(std.math.clamp(col_indices[0], 0, src_size[0] - 1)), row_idx }).toArgb().toArray(),
@@ -1124,10 +1107,10 @@ pub fn ZOrdered(Pixel: type) type {
             };
         }
 
-        fn pixelIndex(pos: [2]u16) usize {
+        fn pixelIndex(pos: [2]u32) usize {
             var index: u32 = 0;
             for (0..16) |i_usize| {
-                const i: u4 = @intCast(i_usize);
+                const i: u5 = @intCast(i_usize);
                 index |= ((1 & (pos[0] >> i)) << (2 * i + 0));
                 index |= ((1 & (pos[1] >> i)) << (2 * i + 1));
             }
