@@ -7,6 +7,19 @@
 //! - https://bottosson.github.io/posts/colorwrong/
 //! - https://mina86.com/2019/srgb-xyz-conversion/
 
+/// Helper function. Takes 8-bit sRGB components plus an unassociated alpha and
+/// converts them to single precision floating point linear RGBA with premultiplied alpha.
+pub fn argbFromRGBUnassociatedAlpha(r: u8, g: u8, b: u8, a: u8) argb(f32) {
+    const color_int = argb8888{
+        .b = @enumFromInt(b),
+        .r = @enumFromInt(r),
+        .g = @enumFromInt(g),
+        .a = a,
+    };
+    const color_float = color_int.toArgb(f32);
+    return argb(f32).fromRGBUnassociatedAlpha(color_float.r, color_float.g, color_float.b, color_float.a);
+}
+
 /// Linear RGB color premultiplied with an alpha component.
 ///
 /// Breaking down the jargon:

@@ -29,14 +29,7 @@ pub fn init() !void {
     errdefer shield_image.free(gpa.allocator());
 
     for (shield_image.pixels[0 .. shield_image.size[0] * shield_image.size[1]], shield_image_tvg.pixels) |*out, in| {
-        const argb8888 = seizer.color.argb8888{
-            .b = @enumFromInt(in.b),
-            .r = @enumFromInt(in.r),
-            .g = @enumFromInt(in.g),
-            .a = in.a,
-        };
-        const argb = argb8888.toArgb(f32);
-        out.* = seizer.color.argb(f32).fromRGBUnassociatedAlpha(argb.r, argb.g, argb.b, argb.a);
+        out.* = seizer.color.argbFromRGBUnassociatedAlpha(in.r, in.g, in.b, in.a);
     }
 
     seizer.setDeinit(deinit);
