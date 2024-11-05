@@ -109,6 +109,16 @@ pub fn argb(F: type) type {
             };
         }
 
+        pub fn blend(this: @This(), other: @This(), f: F) @This() {
+            const clamped: F = std.math.clamp(f, 0.0, 1.0);
+            return .{
+                .b = std.math.lerp(this.b, other.b, clamped),
+                .g = std.math.lerp(this.g, other.g, clamped),
+                .r = std.math.lerp(this.r, other.r, clamped),
+                .a = std.math.lerp(this.a, other.a, clamped),
+            };
+        }
+
         pub fn compositeSrcOverVec(
             comptime L: usize,
             dst: [L]@This(),

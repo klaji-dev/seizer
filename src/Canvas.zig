@@ -44,6 +44,7 @@ pub const LineOptions = struct {
     depth: f64 = 0.5,
     width: f64 = 1,
     color: seizer.color.argb(f64) = seizer.color.argb(f64).WHITE,
+    end_color: ?seizer.color.argb(f64) = null,
 };
 
 pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOptions) void {

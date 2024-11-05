@@ -242,7 +242,9 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
         @intFromFloat(@floor(end[1])),
     };
 
-    this.framebuffer.drawLine(start_i, end_i, options.color.floatCast(f32));
+    const end_color = options.end_color orelse options.color;
+
+    this.framebuffer.drawLine(start_i, end_i, options.color.floatCast(f32), end_color.floatCast(f32));
 }
 
 // shimizu callback functions

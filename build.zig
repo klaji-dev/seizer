@@ -16,6 +16,7 @@ const Example = enum {
     // ui_view_image,
     // ui_plot_sine,
     // colormapped_image,
+    canvas,
 };
 
 pub fn build(b: *Builder) !void {
