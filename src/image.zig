@@ -331,9 +331,13 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             const slice_area = seizer.geometry.AABB(u32).init(this.start_px, .{ this.end_px[0] - 1, this.end_px[1] - 1 });
             if (!area.overlaps(slice_area)) return;
             const rect = area.clamp(slice_area);
+            const left = .{
+                rect.min[0] - this.start_px[0],
+                rect.min[1] - this.start_px[1],
+            };
 
-            const min_tile_pos = this.tilePosFromOffset(rect.min);
-            const max_tile_pos = this.tilePosFromOffset(rect.max);
+            const min_tile_pos = this.tilePosFromOffset(left);
+            const max_tile_pos = this.tilePosFromOffset(rect.size());
 
             const size_in_tiles = sizeInTiles(rect.size());
             for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
@@ -513,24 +517,10 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
-        pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
-            const this_size = [2]u32{
-                this.end_px[0] - this.start_px[0],
-                this.end_px[1] - this.start_px[1],
-            };
-
-            const size_i = [2]i32{ @intCast(this_size[0]), @intCast(this_size[1]) };
-            const min_offset = [2]u32{
-                @intCast(std.math.clamp(@min(a[0], b[0]), 0, size_i[0])),
-                @intCast(std.math.clamp(@min(a[1], b[1]), 0, size_i[1])),
-            };
-            const max_offset = [2]u32{
-                @intCast(std.math.clamp(@max(a[0], b[0]), 0, size_i[0])),
-                @intCast(std.math.clamp(@max(a[1], b[1]), 0, size_i[1])),
-            };
-
-            const min_tile_pos = this.tilePosFromOffset(min_offset);
-            const max_tile_pos = this.tilePosFromOffset(max_offset);
+        pub fn drawFillRect(this: @This(), areaf: geometry.AABB(f64), color: Pixel) void {
+            const area = areaf.into(u32);
+            const min_tile_pos = this.tilePosFromOffset(area.min);
+            const max_tile_pos = this.tilePosFromOffset(area.max);
 
             const size_in_tiles = sizeInTiles(this.size_px);
 
@@ -545,12 +535,12 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                     };
 
                     const min_in_tile = [2]u32{
-                        min_offset[0] -| tile_pos_in_px[0],
-                        min_offset[1] -| tile_pos_in_px[1],
+                        area.min[0] -| tile_pos_in_px[0],
+                        area.min[1] -| tile_pos_in_px[1],
                     };
                     const max_in_tile = [2]u32{
-                        @min((max_offset[0] -| tile_pos_in_px[0]), tile_size[0]),
-                        @min((max_offset[1] -| tile_pos_in_px[1]), tile_size[1]),
+                        @min((area.max[0] -| tile_pos_in_px[0]), tile_size[0]),
+                        @min((area.max[1] -| tile_pos_in_px[1]), tile_size[1]),
                     };
 
                     for (min_in_tile[1]..max_in_tile[1]) |y| {
@@ -720,4 +710,5 @@ test "Tiled ops == Linear ops" {
 const probes = @import("probes");
 const std = @import("std");
 const seizer = @import("./seizer.zig");
+const geometry = seizer.geometry;
 const zigimg = @import("zigimg");

@@ -1,3 +1,23 @@
+pub fn into(comptime T: type, vec: anytype) [2]T {
+    const t = @typeInfo(T);
+    const vt = @typeInfo(@TypeOf(vec));
+    const vt_child = @typeInfo(vt.Array.child);
+    if (vt != .Array) @compileLog("vec.to only operates on arrays");
+    if (t == .Float or t == .ComptimeFloat) {
+        return if (vt_child == .Float)
+            .{ @floatCast(vec[0]), @floatCast(vec[1]) }
+        else
+            .{ @floatFromInt(vec[0]), @floatFromInt(vec[1]) };
+    } else if (t == .Int or t == .ComptimeInt) {
+        return if (vt_child == .Int)
+            .{ @intCast(vec[0]), @intCast(vec[1]) }
+        else
+            .{ @intFromFloat(vec[0]), @intFromFloat(vec[1]) };
+    } else {
+        @panic("Attempting to convert vector to non-numeric type");
+    }
+}
+
 pub fn cross(comptime T: type, a: [3]T, b: [3]T) [3]T {
     return .{
         a[1] * b[2] - a[2] * b[1],

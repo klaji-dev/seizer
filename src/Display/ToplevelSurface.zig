@@ -257,12 +257,11 @@ pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premul
 
 pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    var rect = seizer.geometry.Rect(f64){ .pos = pos, .size = seizer.geometry.vec.into(f64, src_image.size) };
+    rect = rect.translate(pos);
     this.command.appendAssumeCapacity(.{
         .tag = .blit,
-        .renderRect = .{
-            .min = .{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) },
-            .max = src_image.size,
-        },
+        .renderRect = rect.toAABB().into(u32),
         .renderData = .{ .blit = .{ .pos = pos, .src_image = src_image } },
     });
 }
@@ -273,10 +272,7 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64)
 
     this.command.appendAssumeCapacity(.{
         .tag = .rect_fill,
-        .renderRect = .{
-            .min = .{ @intFromFloat(area.min[0]), @intFromFloat(area.min[1]) },
-            .max = .{ @intFromFloat(area.max[0]), @intFromFloat(area.max[1]) },
-        },
+        .renderRect = area.into(u32),
         .renderData = .{ .rect_fill = .{
             .area = area,
             .color = color,
@@ -529,10 +525,8 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
         .rect_fill => {
             const area = data.rect_fill.area;
             const color = data.rect_fill.color;
-            const a = [2]i32{ @intFromFloat(area.min[0]), @intFromFloat(area.max[1]) };
-            const b = [2]i32{ @intFromFloat(area.min[0]), @intFromFloat(area.max[1]) };
 
-            fb.drawFillRect(a, b, color);
+            fb.drawFillRect(area, color);
         },
         .rect_clear => {
             const d = data.rect_clear;

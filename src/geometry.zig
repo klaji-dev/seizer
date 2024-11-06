@@ -106,6 +106,35 @@ pub fn AABB(comptime T: type) type {
             };
         }
 
+        /// Converts each component T of AABB(T) to T2 and returns AABB(T2)
+        pub fn into(this: @This(), comptime T2: type) AABB(T2) {
+            const t = @typeInfo(T);
+            const t2 = @typeInfo(T2);
+            if (t2 == .Int or t == .ComptimeInt) {
+                return if (t == .Int or t == .ComptimeInt)
+                    .{
+                        .min = .{ @intCast(this.min[0]), @intCast(this.min[1]) },
+                        .max = .{ @intCast(this.max[0]), @intCast(this.max[1]) },
+                    }
+                else
+                    .{
+                        .min = .{ @intFromFloat(this.min[0]), @intFromFloat(this.min[1]) },
+                        .max = .{ @intFromFloat(this.max[0]), @intFromFloat(this.max[1]) },
+                    };
+            } else if (t2 == .Float or t == .ComptimeFloat) {
+                return if (t == .Float or t == .ComptimeFloat)
+                    .{
+                        .min = .{ @floatCast(this.min[0]), @floatCast(this.min[1]) },
+                        .max = .{ @floatCast(this.max[0]), @floatCast(this.max[1]) },
+                    }
+                else
+                    .{
+                        .min = .{ @floatFromInt(this.min[0]), @floatFromInt(this.min[1]) },
+                        .max = .{ @floatFromInt(this.max[0]), @floatFromInt(this.max[1]) },
+                    };
+            }
+        }
+
         pub fn fromRect(rect: Rect(T)) @This() {
             return .{
                 .min = rect.topLeft(),
@@ -216,11 +245,33 @@ pub fn Inset(comptime T: type) type {
             };
         }
 
-        pub fn intToFloat(this: @This(), comptime F: type) Inset(F) {
-            return .{
-                .min = .{ @floatFromInt(this.min[0]), @floatFromInt(this.min[1]) },
-                .max = .{ @floatFromInt(this.max[0]), @floatFromInt(this.max[1]) },
-            };
+        /// Converts each component T of Inset(T) to T2 and returns Inset(T2)
+        pub fn into(this: @This(), comptime T2: type) Inset(T2) {
+            const t = @typeInfo(T);
+            const t2 = @typeInfo(T2);
+            if (t2 == .Int or t == .ComptimeInt) {
+                return if (t == .Int or t == .ComptimeInt)
+                    .{
+                        .min = .{ @intCast(this.min[0]), @intCast(this.min[1]) },
+                        .max = .{ @intCast(this.max[0]), @intCast(this.max[1]) },
+                    }
+                else
+                    .{
+                        .min = .{ @intFromFloat(this.min[0]), @intFromFloat(this.min[1]) },
+                        .max = .{ @intFromFloat(this.max[0]), @intFromFloat(this.max[1]) },
+                    };
+            } else if (t2 == .Float or t == .ComptimeFloat) {
+                return if (t == .Float or t == .ComptimeFloat)
+                    .{
+                        .min = .{ @floatCast(this.min[0]), @floatCast(this.min[1]) },
+                        .max = .{ @floatCast(this.max[0]), @floatCast(this.max[1]) },
+                    }
+                else
+                    .{
+                        .min = .{ @floatFromInt(this.min[0]), @floatFromInt(this.min[1]) },
+                        .max = .{ @floatFromInt(this.max[0]), @floatFromInt(this.max[1]) },
+                    };
+            }
         }
     };
 }
