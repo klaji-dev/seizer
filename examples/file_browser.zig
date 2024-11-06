@@ -1,32 +1,24 @@
 pub const main = seizer.main;
 
+var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
 var display: seizer.Display = undefined;
-var window_global: *seizer.Display.Window = undefined;
-var gfx: seizer.Graphics = undefined;
-var swapchain_opt: ?*seizer.Graphics.Swapchain = null;
-var _canvas: seizer.Canvas = undefined;
+var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
+var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
+var input_listener: seizer.Display.ToplevelSurface.OnInputListener = undefined;
 
 var _font: seizer.Canvas.Font = undefined;
-var ui_texture: *seizer.Graphics.Texture = undefined;
+var ui_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
 var _stage: *seizer.ui.Stage = undefined;
 
 pub fn init() !void {
-    display = try seizer.Display.create(seizer.platform.allocator(), seizer.platform.loop(), .{});
-    errdefer display.destroy();
+    try display.init(gpa.allocator(), seizer.getLoop());
 
-    gfx = try seizer.Graphics.create(seizer.platform.allocator(), .{});
-    errdefer gfx.destroy();
-
-    window_global = try display.createWindow(.{
-        .title = "File Browser - Seizer Example",
-        .size = .{ 640, 480 },
-        .on_event = onWindowEvent,
-        .on_render = render,
-    });
+    try display.initToplevelSurface(&toplevel_surface, .{});
+    toplevel_surface.setOnInput(&input_listener, onToplevelInputEvent, null);
+    toplevel_surface.setOnRender(&render_listener, onRender, null);
 
     _font = try seizer.Canvas.Font.fromFileContents(
-        seizer.platform.allocator(),
-        gfx,
+        gpa.allocator(),
         @embedFile("./assets/PressStart2P_8.fnt"),
         &.{
             .{ .name = "PressStart2P_8.png", .contents = @embedFile("./assets/PressStart2P_8.png") },
@@ -34,25 +26,19 @@ pub fn init() !void {
     );
     errdefer _font.deinit();
 
-    _canvas = try seizer.Canvas.init(seizer.platform.allocator(), gfx, .{});
-    errdefer _canvas.deinit();
+    ui_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
+    errdefer ui_image.free(gpa.allocator());
 
-    var ui_image = try seizer.zigimg.Image.fromMemory(seizer.platform.allocator(), @embedFile("./assets/ui.png"));
-    defer ui_image.deinit();
-
-    ui_texture = try gfx.createTexture(ui_image.toUnmanaged(), .{});
-    errdefer gfx.destroyTexture(ui_texture);
-
-    _stage = try seizer.ui.Stage.create(seizer.platform.allocator(), .{
+    _stage = try seizer.ui.Stage.create(gpa.allocator(), .{
         .padding = .{
             .min = .{ 16, 16 },
             .max = .{ 16, 16 },
         },
         .text_font = &_font,
         .text_scale = 1,
-        .text_color = [4]u8{ 0xFF, 0xFF, 0xFF, 0xFF },
-        .background_image = seizer.NinePatch.initv(ui_texture, [2]u32{ @intCast(ui_image.width), @intCast(ui_image.height) }, .{ .pos = .{ 0, 0 }, .size = .{ 48, 48 } }, .{ 16, 16 }),
-        .background_color = [4]u8{ 0xFF, 0xFF, 0xFF, 0xFF },
+        .text_color = seizer.color.argbf32_premultiplied.WHITE,
+        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
+        .background_color = seizer.color.argbf32_premultiplied.WHITE,
     });
     errdefer _stage.destroy();
 
@@ -60,63 +46,38 @@ pub fn init() !void {
     defer file_browser.release();
     _stage.setRoot(file_browser.element());
 
-    seizer.platform.setDeinitCallback(deinit);
+    seizer.setDeinit(deinit);
 }
 
 pub fn deinit() void {
-    _font.deinit();
-    if (swapchain_opt) |swapchain| {
-        gfx.destroySwapchain(swapchain);
-        swapchain_opt = null;
-    }
-    display.destroyWindow(window_global);
     _stage.destroy();
-    gfx.destroyTexture(ui_texture);
-    _canvas.deinit();
-    gfx.destroy();
-    display.destroy();
+
+    _font.deinit();
+    ui_image.free(gpa.allocator());
+
+    toplevel_surface.deinit();
+    display.deinit();
+    _ = gpa.deinit();
 }
 
-fn onWindowEvent(window: *seizer.Display.Window, event: seizer.Display.Window.Event) !void {
-    _ = window;
-    switch (event) {
-        .should_close => seizer.platform.setShouldExit(true),
-        .resize, .rescale => {
-            if (swapchain_opt) |swapchain| {
-                gfx.destroySwapchain(swapchain);
-                swapchain_opt = null;
-            }
-            _stage.needs_layout = true;
-        },
-        .input => |input_event| if (_stage.processEvent(input_event) == null) {
-            // add game control here, as the event wasn't applicable to the GUI
-        },
+fn onToplevelInputEvent(listener: *seizer.Display.ToplevelSurface.OnInputListener, surface: *seizer.Display.ToplevelSurface, event: seizer.input.Event) !void {
+    _ = listener;
+    if (_stage.processEvent(event)) |_| {
+        try surface.requestAnimationFrame();
+        try display.connection.sendRequest(@TypeOf(surface.wl_surface)._SPECIFIED_INTERFACE, surface.wl_surface, .commit, .{});
     }
 }
 
-fn render(window: *seizer.Display.Window) !void {
-    const window_size = display.windowGetSize(window);
-    const window_scale = display.windowGetScale(window);
+fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface: *seizer.Display.ToplevelSurface) anyerror!void {
+    _ = listener;
 
-    const swapchain = swapchain_opt orelse create_swapchain: {
-        const new_swapchain = try gfx.createSwapchain(display, window, .{ .size = window_size, .scale = window_scale });
-        swapchain_opt = new_swapchain;
-        break :create_swapchain new_swapchain;
-    };
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
-    const render_buffer = try gfx.swapchainGetRenderBuffer(swapchain, .{});
+    _stage.needs_layout = true;
+    _stage.render(canvas, canvas.size());
 
-    const c = _canvas.begin(render_buffer, .{
-        .window_size = window_size,
-        .window_scale = window_scale,
-        .clear_color = .{ 0.7, 0.5, 0.5, 1.0 },
-    });
-
-    _stage.render(c, window_size);
-
-    _canvas.end(render_buffer);
-
-    try gfx.swapchainPresentRenderBuffer(display, window, swapchain, render_buffer);
+    try surface.present();
 }
 
 const FileBrowserElement = struct {
@@ -130,26 +91,26 @@ const FileBrowserElement = struct {
     top_bar_address_label: *seizer.ui.Element.Label,
     top_bar_up_button: *seizer.ui.Element.Button,
 
-    top_bar_back_button_rect: seizer.geometry.Rect(f32) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_forward_button_rect: seizer.geometry.Rect(f32) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_refresh_button_rect: seizer.geometry.Rect(f32) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_address_label_rect: seizer.geometry.Rect(f32) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_up_button_rect: seizer.geometry.Rect(f32) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    top_bar_back_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    top_bar_forward_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    top_bar_refresh_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    top_bar_address_label_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    top_bar_up_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
 
     directory: std.fs.Dir,
     history: std.ArrayListUnmanaged([]const u8) = .{},
     history_index: usize = 0,
 
     arena: std.heap.ArenaAllocator,
-    entries_rect: seizer.geometry.Rect(f32) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    entries_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
     entries: ?std.ArrayListUnmanaged(Entry) = null,
     hovered: ?usize = null,
 
     /// spacing between lines, given as a multiple of lineHeight
-    spacing: f32 = 1.5,
+    spacing: f64 = 1.5,
 
-    const HOVERED_BG_COLOR = [4]u8{ 0xFF, 0xFF, 0xFF, 0x80 };
-    const MARKED_BG_COLOR = [4]u8{ 0x00, 0x00, 0x00, 0x80 };
+    const HOVERED_BG_COLOR = seizer.color.fromSRGB(0xFF, 0xFF, 0xFF, 0x80);
+    const MARKED_BG_COLOR = seizer.color.fromSRGB(0x00, 0x00, 0x00, 0x80);
 
     pub const Entry = struct {
         name: []const u8,
@@ -314,7 +275,7 @@ const FileBrowserElement = struct {
         switch (event) {
             .hover => |hover| {
                 this.hovered = null;
-                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f32) }){
+                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f64) }){
                     .{ this.top_bar_back_button.element(), this.top_bar_back_button_rect },
                     .{ this.top_bar_forward_button.element(), this.top_bar_forward_button_rect },
                     .{ this.top_bar_refresh_button.element(), this.top_bar_refresh_button_rect },
@@ -324,16 +285,16 @@ const FileBrowserElement = struct {
                 for (top_bar_elements) |top_bar_element| {
                     if (top_bar_element[1].contains(hover.pos)) {
                         return top_bar_element[0].processEvent(.{
-                            .hover = hover.transform(seizer.geometry.mat4.translate(f32, top_bar_element[1].pos ++ .{0})),
+                            .hover = hover.transform(seizer.geometry.mat4.translate(f64, top_bar_element[1].pos ++ .{0})),
                         });
                     }
                 }
 
-                var pos: [2]f32 = this.entries_rect.pos;
+                var pos: [2]f64 = this.entries_rect.pos;
                 if (this.entries) |entries| {
                     for (entries.items, 0..) |entry, i| {
                         pos[1] += @floor((this.spacing - 1) * font.line_height);
-                        const rect = seizer.geometry.Rect(f32){
+                        const rect = seizer.geometry.Rect(f64){
                             .pos = pos,
                             .size = .{ this.entries_rect.size[0], font.textSize(entry.name, scale)[1] },
                         };
@@ -346,7 +307,7 @@ const FileBrowserElement = struct {
                 }
             },
             .click => |click| if (click.button == .left and click.pressed) {
-                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f32) }){
+                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f64) }){
                     .{ this.top_bar_back_button.element(), this.top_bar_back_button_rect },
                     .{ this.top_bar_forward_button.element(), this.top_bar_forward_button_rect },
                     .{ this.top_bar_refresh_button.element(), this.top_bar_refresh_button_rect },
@@ -356,7 +317,7 @@ const FileBrowserElement = struct {
                 for (top_bar_elements) |top_bar_element| {
                     if (top_bar_element[1].contains(click.pos)) {
                         return top_bar_element[0].processEvent(.{
-                            .click = click.transform(seizer.geometry.mat4.translate(f32, top_bar_element[1].pos ++ .{0})),
+                            .click = click.transform(seizer.geometry.mat4.translate(f64, top_bar_element[1].pos ++ .{0})),
                         });
                     }
                 }
@@ -367,11 +328,11 @@ const FileBrowserElement = struct {
                     }
                 }
 
-                var pos: [2]f32 = this.entries_rect.pos;
+                var pos: [2]f64 = this.entries_rect.pos;
                 if (this.entries) |entries| {
                     for (entries.items) |*entry| {
                         pos[1] += @floor((this.spacing - 1) * font.line_height);
-                        const rect = seizer.geometry.Rect(f32){
+                        const rect = seizer.geometry.Rect(f64){
                             .pos = pos,
                             .size = .{ this.entries_rect.size[0], font.textSize(entry.name, scale)[1] },
                         };
@@ -388,8 +349,8 @@ const FileBrowserElement = struct {
         return null;
     }
 
-    pub fn getMinSize(this: *@This()) [2]f32 {
-        var top_bar_min_size = [2]f32{ 0, 0 };
+    pub fn getMinSize(this: *@This()) [2]f64 {
+        var top_bar_min_size = [2]f64{ 0, 0 };
         const top_bar_elements = &[_]seizer.ui.Element{
             this.top_bar_back_button.element(),
             this.top_bar_forward_button.element(),
@@ -403,7 +364,7 @@ const FileBrowserElement = struct {
             top_bar_min_size[1] = @max(top_bar_min_size[1], size[1]);
         }
 
-        var entries_min_size = [2]f32{ 0, 0 };
+        var entries_min_size = [2]f64{ 0, 0 };
         if (this.entries) |entries| {
             for (entries.items) |entry| {
                 // add some extra spacing between text
@@ -419,10 +380,10 @@ const FileBrowserElement = struct {
         };
     }
 
-    pub fn layout(this: *@This(), min: [2]f32, max: [2]f32) [2]f32 {
+    pub fn layout(this: *@This(), min: [2]f64, max: [2]f64) [2]f64 {
         _ = min;
 
-        var pos = [2]f32{ 0, 0 };
+        var pos = [2]f64{ 0, 0 };
         this.top_bar_back_button_rect = .{
             .pos = pos,
             .size = this.top_bar_back_button.element().getMinSize(),
@@ -448,7 +409,7 @@ const FileBrowserElement = struct {
         this.top_bar_address_label_rect.size[0] = this.top_bar_up_button_rect.pos[0] - this.top_bar_address_label_rect.pos[0];
         this.top_bar_address_label_rect.size[1] = this.top_bar_address_label.element().getMinSize()[1];
 
-        const top_bar_height = std.mem.max(f32, &.{
+        const top_bar_height = std.mem.max(f64, &.{
             this.top_bar_back_button_rect.size[1],
             this.top_bar_forward_button_rect.size[1],
             this.top_bar_refresh_button_rect.size[1],
@@ -456,8 +417,8 @@ const FileBrowserElement = struct {
             this.top_bar_up_button_rect.size[1],
         });
 
-        this.entries_rect.pos = [2]f32{ 0, top_bar_height };
-        this.entries_rect.size = [2]f32{ max[0], 0 };
+        this.entries_rect.pos = [2]f64{ 0, top_bar_height };
+        this.entries_rect.size = [2]f64{ max[0], 0 };
         if (this.entries) |entries| {
             for (entries.items) |entry| {
                 // add some extra spacing between text
@@ -470,12 +431,12 @@ const FileBrowserElement = struct {
         return max;
     }
 
-    fn fileBrowserRender(this: *@This(), canvas: seizer.Canvas.Transformed, rect: seizer.geometry.Rect(f32)) void {
+    fn fileBrowserRender(this: *@This(), canvas: seizer.Canvas, rect: seizer.geometry.Rect(f64)) void {
         const entries = this.entries orelse return;
 
         const element_hovered = if (this.stage.hovered_element) |hovered| hovered.ptr == this.element().ptr else false;
 
-        const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f32) }){
+        const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f64) }){
             .{ this.top_bar_back_button.element(), this.top_bar_back_button_rect },
             .{ this.top_bar_forward_button.element(), this.top_bar_forward_button_rect },
             .{ this.top_bar_refresh_button.element(), this.top_bar_refresh_button_rect },
@@ -492,16 +453,16 @@ const FileBrowserElement = struct {
 
             const entry_hovered = this.hovered != null and this.hovered.? == i;
             if (element_hovered and entry_hovered) {
-                canvas.rect(
+                canvas.fillRect(
                     pos,
                     .{ rect.size[0], this.stage.default_style.text_font.line_height },
                     .{ .color = HOVERED_BG_COLOR },
                 );
             }
 
-            const bg_color: ?[4]u8 = if (entry.marked) MARKED_BG_COLOR else null;
+            // const bg_color: ?seizer.color.argbf32_premultiplied = if (entry.marked) MARKED_BG_COLOR else null;
 
-            pos[1] += canvas.writeText(this.stage.default_style.text_font, pos, entry.name, .{ .background = bg_color })[1];
+            pos[1] += canvas.writeText(this.stage.default_style.text_font, pos, entry.name, .{})[1];
         }
     }
 

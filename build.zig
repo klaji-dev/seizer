@@ -12,7 +12,7 @@ const Example = enum {
     tinyvg,
     ui_stage,
     multi_window,
-    // file_browser,
+    file_browser,
     ui_view_image,
     ui_plot_sine,
     // colormapped_image,
