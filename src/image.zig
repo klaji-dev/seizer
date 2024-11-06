@@ -279,6 +279,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
 
         pub const Tile = [tile_size[1]][tile_size[0]]Pixel;
 
+        pub const TILE_SIZE = tile_size;
+
         pub fn alloc(allocator: std.mem.Allocator, size_px: [2]u32) !@This() {
             const size_in_tiles = sizeInTiles(size_px);
 
@@ -335,7 +337,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
-        fn sizeInTiles(size_px: [2]u32) [2]u32 {
+        pub fn sizeInTiles(size_px: [2]u32) [2]u32 {
             return .{
                 (size_px[0] + (tile_size[0] + 1)) / tile_size[0],
                 (size_px[1] + (tile_size[1] + 1)) / tile_size[1],
@@ -593,7 +595,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             pos_in_tile: [2]u8,
         };
 
-        fn tilePosFromOffset(this: @This(), offset: [2]u32) TilePos {
+        pub fn tilePosFromOffset(this: @This(), offset: [2]u32) TilePos {
             std.debug.assert(offset[0] >= 0 and offset[1] >= 0);
             std.debug.assert(offset[0] <= this.end_px[0] - this.start_px[0] and offset[1] <= this.end_px[1] - this.start_px[1]);
             const pos = [2]u32{

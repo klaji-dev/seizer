@@ -22,6 +22,11 @@ close_listener: ?*CloseListener,
 on_render_listener: ?*OnRenderListener,
 on_input_listener: ?*OnInputListener,
 
+// Cached software rendering
+command: std.MultiArrayList(Command),
+command_hash: std.ArrayListUnmanaged(std.hash.Fnv1a_32),
+command_hash_prev: std.ArrayListUnmanaged(std.hash.Fnv1a_32),
+
 pub const InitOptions = struct {
     size: [2]u32 = .{ 640, 480 },
 };
@@ -119,6 +124,8 @@ pub fn requestAnimationFrame(this: *@This()) !void {
 }
 
 pub fn present(this: *@This()) !void {
+    try this.executeCanvasCommands();
+
     if (!std.mem.eql(u32, &this.swapchain.size, &this.current_configuration.window_size)) {
         this.swapchain.deinit();
         try this.swapchain.allocate(.{ .connection = &this.display.connection, .id = this.display.globals.wl_shm.? }, this.current_configuration.window_size, 3);
@@ -179,6 +186,52 @@ const CANVAS_INTERFACE: *const seizer.Canvas.Interface = &.{
     .line = canvas_line,
 };
 
+const Command = struct {
+    tag: Tag,
+    renderRect: seizer.geometry.AABB(u32),
+    renderData: Data,
+
+    const Tag = enum {
+        blit,
+        line,
+        rect_texture,
+        rect_fill,
+        rect_clear,
+
+        // TODO: Implement these commands
+        rect_stroke,
+        rect_fill_stroke,
+    };
+
+    const Data = union {
+        blit: struct {
+            pos: [2]f64,
+            src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
+        },
+        line: struct {
+            point: [2][2]f32,
+            color: [2]seizer.color.argbf32_premultiplied,
+            radii: [2]f32,
+        },
+        rect_texture: struct {
+            rect_dst: seizer.geometry.Rect(f64),
+            src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
+            color: seizer.color.argbf32_premultiplied,
+        },
+        rect_fill: struct {
+            rect_dst: seizer.geometry.Rect(f64),
+            color: seizer.color.argbf32_premultiplied,
+        },
+        rect_clear: struct {
+            color: seizer.color.argbf32_premultiplied,
+        },
+
+        // TODO: Implement these commands
+        // rect_stroke,
+        // rect_fill_stroke,
+    };
+};
+
 pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
     return .{ @floatFromInt(this.current_configuration.window_size[0]), @floatFromInt(this.current_configuration.window_size[1]) };
@@ -186,156 +239,55 @@ pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
 
 pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premultiplied) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
-    this.framebuffer.clear(color);
+    this.command.appendAssumeCapacity(.{
+        .tag = .rect_clear,
+        .renderRect = .{ .min = .{ 0, 0 }, .max = this.current_configuration.window_size },
+        .renderData = .{ .rect_clear = .{ .color = color } },
+    });
 }
 
 pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
-
-    const pos_i = [2]i32{
-        @intFromFloat(@floor(pos[0])),
-        @intFromFloat(@floor(pos[1])),
-    };
-    const size_i = [2]i32{
-        @intCast(this.current_configuration.window_size[0]),
-        @intCast(this.current_configuration.window_size[1]),
-    };
-
-    if (pos_i[0] + size_i[0] <= 0 or pos_i[1] + size_i[1] <= 0) return;
-    if (pos_i[0] >= size_i[0] or pos_i[1] >= size_i[1]) return;
-
-    const src_size = [2]u32{
-        @min(src_image.size[0], @as(u32, @intCast(size_i[0] - pos_i[0]))),
-        @min(src_image.size[1], @as(u32, @intCast(size_i[1] - pos_i[1]))),
-    };
-
-    const src_offset = [2]u32{
-        if (pos_i[0] < 0) @intCast(-pos_i[0]) else 0,
-        if (pos_i[1] < 0) @intCast(-pos_i[1]) else 0,
-    };
-    const dest_offset = [2]u32{
-        @intCast(@max(pos_i[0], 0)),
-        @intCast(@max(pos_i[1], 0)),
-    };
-
-    const src = src_image.slice(src_offset, src_size);
-    const dest = this.framebuffer.slice(dest_offset, src_size);
-
-    dest.compositeLinear(src);
+    this.command.appendAssumeCapacity(.{
+        .tag = .blit,
+        .renderRect = .{
+            .min = .{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) },
+            .max = src_image.size,
+        },
+        .renderData = .{ .blit = .{ .pos = pos, .src_image = src_image } },
+    });
 }
 
 pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
-    const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
-    const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
 
-    this.framebuffer.drawFillRect(a, b, options.color);
+    this.command.appendAssumeCapacity(.{
+        .tag = .rect_fill,
+        .renderRect = .{
+            .min = .{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) },
+            .max = .{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) },
+        },
+        .renderData = .{ .rect_fill = .{
+            .rect_dst = .{ .pos = pos, .size = size },
+            .color = options.color,
+        } },
+    });
 }
 
 pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_posf: [2]f64, dst_sizef: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
-    std.debug.assert(dst_sizef[0] >= 0 and dst_sizef[1] >= 0);
-
-    const src_sizef: [2]f32 = .{
-        @floatFromInt(src_image.size[0]),
-        @floatFromInt(src_image.size[1]),
-    };
-
-    const window_sizef = [2]f64{
-        @floatFromInt(this.current_configuration.window_size[0]),
-        @floatFromInt(this.current_configuration.window_size[1]),
-    };
-
-    const dst_start_clamped = .{
-        std.math.clamp(dst_posf[0], 0, window_sizef[0]),
-        std.math.clamp(dst_posf[1], 0, window_sizef[1]),
-    };
-    const dst_end_clamped = .{
-        std.math.clamp(dst_posf[0] + dst_sizef[0], 0, window_sizef[0]),
-        std.math.clamp(dst_posf[1] + dst_sizef[1], 0, window_sizef[1]),
-    };
-
-    const dst_start_pos = [2]u32{
-        @intFromFloat(dst_start_clamped[0]),
-        @intFromFloat(dst_start_clamped[1]),
-    };
-    const dst_end_pos = [2]u32{
-        @intFromFloat(dst_end_clamped[0]),
-        @intFromFloat(dst_end_clamped[1]),
-    };
-
-    const dst_size = [2]u32{
-        dst_end_pos[0] - dst_start_pos[0],
-        dst_end_pos[1] - dst_start_pos[1],
-    };
-    if (dst_size[0] == 0 or dst_size[1] == 0) return;
-
-    const src_start_offset = .{
-        dst_start_clamped[0] - dst_posf[0],
-        dst_start_clamped[1] - dst_posf[1],
-    };
-    const src_end_offset = .{
-        dst_end_clamped[0] - (dst_posf[0] + dst_sizef[0]),
-        dst_end_clamped[1] - (dst_posf[1] + dst_sizef[1]),
-    };
-    const src_start_pos = [2]u32{
-        @intFromFloat(src_start_offset[0]),
-        @intFromFloat(src_start_offset[1]),
-    };
-    const src_end_pos = [2]u32{
-        @intFromFloat(src_sizef[0] + src_end_offset[0]),
-        @intFromFloat(src_sizef[1] + src_end_offset[1]),
-    };
-    const src_size = [2]u32{
-        src_end_pos[0] - src_start_pos[0],
-        src_end_pos[1] - src_start_pos[1],
-    };
-    if (src_size[0] == 0 or src_size[1] == 0) return;
-
-    const dst = this.framebuffer.slice(dst_start_pos, dst_size);
-    const src = src_image.slice(src_start_pos, src_size);
-
-    const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
-    const Sampler = struct {
-        texture: Linear,
-        stride_f: [2]f32,
-        tint: seizer.color.argbf32_premultiplied,
-
-        pub fn sample(sampler: *const @This(), pos: [2]u32, sample_rect: Linear) void {
-            for (0..sample_rect.size[1]) |sample_y| {
-                for (0..sample_rect.size[0]) |sample_x| {
-                    const sample_posf = [2]f32{
-                        @floatFromInt(pos[0] + sample_x),
-                        @floatFromInt(pos[1] + sample_y),
-                    };
-                    const src_posf = .{
-                        sample_posf[0] * sampler.stride_f[0],
-                        sample_posf[1] * sampler.stride_f[1],
-                    };
-                    const src_pixel = sampler.texture.getPixel(.{
-                        @intFromFloat(src_posf[0]),
-                        @intFromFloat(src_posf[1]),
-                    });
-                    sample_rect.setPixel(
-                        .{ @intCast(sample_x), @intCast(sample_y) },
-                        src_pixel.tint(sampler.tint),
-                    );
-                }
-            }
-        }
-    };
-    dst.compositeSampler(
-        *const Sampler,
-        Sampler.sample,
-        &.{
-            .texture = src,
-            .stride_f = .{
-                @floatCast((src_sizef[0] + src_end_offset[0] - src_start_offset[0]) / (dst_end_clamped[0] - dst_start_clamped[0])),
-                @floatCast((src_sizef[1] + src_end_offset[1] - src_start_offset[1]) / (dst_end_clamped[1] - dst_start_clamped[1])),
-            },
-            .tint = options.color,
+    this.command.appendAssumeCapacity(.{
+        .tag = .rect_texture,
+        .renderRect = .{
+            .min = .{ @intFromFloat(dst_posf[0]), @intFromFloat(dst_posf[1]) },
+            .max = .{ @intFromFloat(dst_posf[0] + dst_sizef[0]), @intFromFloat(dst_posf[1] + dst_sizef[1]) },
         },
-    );
+        .renderData = .{ .rect_texture = .{
+            .rect_dst = .{ .pos = dst_posf, .size = dst_sizef },
+            .src_image = src_image,
+            .color = options.color,
+        } },
+    });
 }
 
 pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {
@@ -353,7 +305,269 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
     const width: f32 = @floatCast(options.width);
     const end_width: f32 = @floatCast(options.end_width orelse width);
 
-    this.framebuffer.drawLine(start_f, end_f, .{ width, end_width }, .{ options.color, end_color });
+    const rmax = @max(width, end_width);
+    const px0: u32 = @intFromFloat(@max(0, @floor(@min(start_f[0], end_f[0]) - rmax)));
+    const px1: u32 = @intFromFloat(@max(0, @ceil(@max(start_f[0], end_f[0]) + rmax)));
+    const py0: u32 = @intFromFloat(@max(0, @floor(@min(start_f[1], end_f[1]) - rmax)));
+    const py1: u32 = @intFromFloat(@max(0, @ceil(@max(start_f[1], end_f[1]) + rmax)));
+
+    this.command.appendAssumeCapacity(.{
+        .tag = .line,
+        .renderRect = .{
+            .min = .{ px0, py0 },
+            .max = .{ px1, py1 },
+        },
+        .renderData = .{
+            .line = .{
+                .point = .{ start_f, end_f },
+                .color = .{ options.color, end_color },
+                .radii = .{ width, end_width },
+            },
+        },
+    });
+}
+
+const binning_size = 64;
+
+fn executeCanvasCommands(this: *ToplevelSurface) !void {
+    const allocator = this.display.allocator;
+    const window_size = this.current_configuration.window_size;
+    const bin_count = .{
+        @divFloor(window_size[0], binning_size),
+        @divFloor(window_size[1], binning_size),
+    };
+    try this.command_hash.resize(allocator, bin_count[0] * bin_count[1]);
+
+    for (this.command_hash.items) |*h| {
+        h.* = std.hash.Fnv1a_32.init();
+    }
+
+    const command = this.command.slice();
+
+    for (command.items(.tag), command.items(.renderRect), command.items(.renderData)) |tag, rect, data| {
+        // Compute hash of the render command
+        var hash = std.hash.Fnv1a_32.init();
+        hash.update(std.mem.asBytes(&tag));
+        hash.update(std.mem.asBytes(&data));
+        const h = hash.final();
+
+        const update_x_start: usize = rect.min[0] / binning_size;
+        const update_y_start: usize = rect.min[1] / binning_size;
+        const update_x_end: usize = @min(bin_count[0], (rect.max[0] / binning_size) + 1);
+        const update_y_end: usize = @min(bin_count[1], (rect.max[1] / binning_size) + 1);
+
+        for (update_y_start..update_y_end) |y| {
+            for (update_x_start..update_x_end) |x| {
+                this.command_hash.items[x + y * bin_count[0]].update(std.mem.asBytes(&h));
+            }
+        }
+    }
+
+    const tiles_per_bin = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).sizeInTiles(.{ binning_size, binning_size });
+    if (this.command_hash.items.len == this.command_hash_prev.items.len) {
+        // See if the we can skip rendering
+        for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
+            if (h.final() != hp.final()) {
+                const bin_x = i % bin_count[0];
+                const bin_y = i / bin_count[1];
+                const tile_start_x: u32 = @intCast(bin_x * tiles_per_bin[0]);
+                const tile_start_y: u32 = @intCast(bin_y * tiles_per_bin[1]);
+                const tile_offset = [2]u32{ tile_start_x, tile_start_y };
+                const tile_slice = this.framebuffer.slice(tile_offset, tiles_per_bin);
+                // Hash mismatch! This bin needs to be updated
+                for (command.items(.tag), command.items(.renderData)) |tag, data| {
+                    this.executeCanvasCommand(tag, data, tile_slice);
+                }
+            }
+        }
+    } else {
+        // First frame or resized, draw everything
+        for (command.items(.tag), command.items(.renderData)) |tag, data| {
+            this.executeCanvasCommand(tag, data, this.framebuffer);
+        }
+    }
+
+    // Swap the memory used for current and previous hash lists
+    const hash_list = this.command_hash_prev;
+    this.command_hash_prev = this.command_hash;
+    this.command_hash = hash_list;
+
+    this.command.shrinkRetainingCapacity(0);
+}
+
+fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.Data, fb: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied)) void {
+    switch (tag) {
+        .blit => {
+            const pos = data.blit.pos;
+            const src_image = data.blit.src_image;
+            const pos_i = [2]i32{
+                @intFromFloat(@floor(pos[0])),
+                @intFromFloat(@floor(pos[1])),
+            };
+            const size_i = [2]i32{
+                @intCast(this.current_configuration.window_size[0]),
+                @intCast(this.current_configuration.window_size[1]),
+            };
+
+            if (pos_i[0] + size_i[0] <= 0 or pos_i[1] + size_i[1] <= 0) return;
+            if (pos_i[0] >= size_i[0] or pos_i[1] >= size_i[1]) return;
+
+            const src_size = [2]u32{
+                @min(src_image.size[0], @as(u32, @intCast(size_i[0] - pos_i[0]))),
+                @min(src_image.size[1], @as(u32, @intCast(size_i[1] - pos_i[1]))),
+            };
+
+            const src_offset = [2]u32{
+                if (pos_i[0] < 0) @intCast(-pos_i[0]) else 0,
+                if (pos_i[1] < 0) @intCast(-pos_i[1]) else 0,
+            };
+            const dest_offset = [2]u32{
+                @intCast(@max(pos_i[0], 0)),
+                @intCast(@max(pos_i[1], 0)),
+            };
+
+            const src = src_image.slice(src_offset, src_size);
+            const dest = fb.slice(dest_offset, src_size);
+
+            dest.compositeLinear(src);
+        },
+        .line => {
+            const start = data.line.point[0];
+            const end = data.line.point[1];
+            const radii = data.line.radii;
+            const color = data.line.color;
+
+            fb.drawLine(start, end, radii, color);
+        },
+        .rect_texture => {
+            const dst_posf = data.rect_texture.rect_dst.pos;
+            const dst_sizef = data.rect_texture.rect_dst.size;
+            const src_image = data.rect_texture.src_image;
+            const color = data.rect_texture.color;
+
+            std.debug.assert(dst_sizef[0] >= 0 and dst_sizef[1] >= 0);
+
+            const src_sizef: [2]f32 = .{
+                @floatFromInt(src_image.size[0]),
+                @floatFromInt(src_image.size[1]),
+            };
+
+            const window_sizef = [2]f64{
+                @floatFromInt(this.current_configuration.window_size[0]),
+                @floatFromInt(this.current_configuration.window_size[1]),
+            };
+
+            const dst_start_clamped = .{
+                std.math.clamp(dst_posf[0], 0, window_sizef[0]),
+                std.math.clamp(dst_posf[1], 0, window_sizef[1]),
+            };
+            const dst_end_clamped = .{
+                std.math.clamp(dst_posf[0] + dst_sizef[0], 0, window_sizef[0]),
+                std.math.clamp(dst_posf[1] + dst_sizef[1], 0, window_sizef[1]),
+            };
+
+            const dst_start_pos = [2]u32{
+                @intFromFloat(dst_start_clamped[0]),
+                @intFromFloat(dst_start_clamped[1]),
+            };
+            const dst_end_pos = [2]u32{
+                @intFromFloat(dst_end_clamped[0]),
+                @intFromFloat(dst_end_clamped[1]),
+            };
+
+            const dst_size = [2]u32{
+                dst_end_pos[0] - dst_start_pos[0],
+                dst_end_pos[1] - dst_start_pos[1],
+            };
+            if (dst_size[0] == 0 or dst_size[1] == 0) return;
+
+            const src_start_offset = .{
+                dst_start_clamped[0] - dst_posf[0],
+                dst_start_clamped[1] - dst_posf[1],
+            };
+            const src_end_offset = .{
+                dst_end_clamped[0] - (dst_posf[0] + dst_sizef[0]),
+                dst_end_clamped[1] - (dst_posf[1] + dst_sizef[1]),
+            };
+            const src_start_pos = [2]u32{
+                @intFromFloat(src_start_offset[0]),
+                @intFromFloat(src_start_offset[1]),
+            };
+            const src_end_pos = [2]u32{
+                @intFromFloat(src_sizef[0] + src_end_offset[0]),
+                @intFromFloat(src_sizef[1] + src_end_offset[1]),
+            };
+            const src_size = [2]u32{
+                src_end_pos[0] - src_start_pos[0],
+                src_end_pos[1] - src_start_pos[1],
+            };
+            if (src_size[0] == 0 or src_size[1] == 0) return;
+
+            const dst = this.framebuffer.slice(dst_start_pos, dst_size);
+            const src = src_image.slice(src_start_pos, src_size);
+
+            const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
+            const Sampler = struct {
+                texture: Linear,
+                stride_f: [2]f32,
+                tint: seizer.color.argbf32_premultiplied,
+
+                pub fn sample(sampler: *const @This(), pos: [2]u32, sample_rect: Linear) void {
+                    for (0..sample_rect.size[1]) |sample_y| {
+                        for (0..sample_rect.size[0]) |sample_x| {
+                            const sample_posf = [2]f32{
+                                @floatFromInt(pos[0] + sample_x),
+                                @floatFromInt(pos[1] + sample_y),
+                            };
+                            const src_posf = .{
+                                sample_posf[0] * sampler.stride_f[0],
+                                sample_posf[1] * sampler.stride_f[1],
+                            };
+                            const src_pixel = sampler.texture.getPixel(.{
+                                @intFromFloat(src_posf[0]),
+                                @intFromFloat(src_posf[1]),
+                            });
+                            sample_rect.setPixel(
+                                .{ @intCast(sample_x), @intCast(sample_y) },
+                                src_pixel.tint(sampler.tint),
+                            );
+                        }
+                    }
+                }
+            };
+            dst.compositeSampler(
+                *const Sampler,
+                Sampler.sample,
+                &.{
+                    .texture = src,
+                    .stride_f = .{
+                        @floatCast((src_sizef[0] + src_end_offset[0] - src_start_offset[0]) / (dst_end_clamped[0] - dst_start_clamped[0])),
+                        @floatCast((src_sizef[1] + src_end_offset[1] - src_start_offset[1]) / (dst_end_clamped[1] - dst_start_clamped[1])),
+                    },
+                    .tint = color,
+                },
+            );
+        },
+        .rect_fill => {
+            const pos = data.rect_fill.rect_dst.pos;
+            const size = data.rect_fill.rect_dst.size;
+            const color = data.rect_fill.color;
+            const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
+            const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
+
+            fb.drawFillRect(a, b, color);
+        },
+        .rect_clear => {
+            const d = data.rect_clear;
+            fb.clear(d.color);
+        },
+        .rect_stroke => {
+            // TODO
+        },
+        .rect_fill_stroke => {
+            // TODO
+        },
+    }
 }
 
 // shimizu callback functions
