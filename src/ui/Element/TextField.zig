@@ -4,7 +4,7 @@ parent: ?Element = null,
 
 text: std.ArrayListUnmanaged(u8) = .{},
 /// Minimum width of the text area in ems.
-width: f32 = 16,
+width: f64 = 16,
 cursor_pos: usize = 0,
 selection_start: usize = 0,
 
@@ -13,6 +13,8 @@ hovered_style: ui.Style,
 focused_style: ui.Style,
 
 on_enter: ?ui.Callable(fn (*@This()) void) = null,
+
+const SELECTION_COLOR = seizer.color.fromSRGB(0xFF, 0xFF, 0xFF, 0xAA);
 
 pub fn create(stage: *ui.Stage) !*@This() {
     const this = try stage.gpa.create(@This());
@@ -78,7 +80,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     switch (event) {
         .hover => |hover| {
             if (this.stage.isPointerCaptureElement(this.element())) {
-                const click_pos = [2]f32{
+                const click_pos = [2]f64{
                     hover.pos[0] - MARGIN[0] - style.padding.min[0],
                     hover.pos[1] - MARGIN[1] - style.padding.min[1],
                 };
@@ -102,7 +104,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                 }
 
                 var text_layout = style.text_font.textLayout(this.text.items, .{ .pos = .{ 0, 0 }, .scale = style.text_scale });
-                var prev_x: f32 = 0;
+                var prev_x: f64 = 0;
                 var index: usize = 0;
                 while (text_layout.next()) |_| : (index += 1) {
                     if (click_pos[0] >= prev_x and click_pos[0] <= text_layout.current_offset[0]) {
@@ -135,13 +137,13 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
             this.stage.setFocusedElement(this.element());
             this.stage.capturePointer(this.element());
 
-            const click_pos = [2]f32{
+            const click_pos = [2]f64{
                 click.pos[0] - MARGIN[0] - style.padding.min[0],
                 click.pos[1] - MARGIN[1] - style.padding.min[1],
             };
 
             var text_layout = style.text_font.textLayout(this.text.items, .{ .pos = .{ 0, 0 }, .scale = style.text_scale });
-            var prev_x: f32 = 0;
+            var prev_x: f64 = 0;
             var index: usize = 0;
             while (text_layout.next()) |_| : (index += 1) {
                 if (click_pos[0] >= prev_x and click_pos[0] <= text_layout.current_offset[0]) {
@@ -284,12 +286,12 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-const MARGIN = [2]f32{
+const MARGIN = [2]f64{
     2,
     2,
 };
 
-pub fn getMinSize(this: *@This()) [2]f32 {
+pub fn getMinSize(this: *@This()) [2]f64 {
     const style = if (this.stage.isFocused(this.element()))
         this.focused_style
     else if (this.stage.isHovered(this.element()))
@@ -303,7 +305,7 @@ pub fn getMinSize(this: *@This()) [2]f32 {
     };
 }
 
-fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
+fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
     const style = if (this.stage.isFocused(this.element()))
         this.focused_style
     else if (this.stage.isHovered(this.element()))
@@ -311,19 +313,22 @@ fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
     else
         this.default_style;
 
-    style.background_image.draw(parent_canvas, .{
-        .pos = .{
+    parent_canvas.ninePatch(
+        .{
             rect.pos[0] + MARGIN[0],
             rect.pos[1] + MARGIN[1],
         },
-        .size = [2]f32{
+        .{
             rect.size[0] - 2 * MARGIN[0],
             style.text_font.line_height * style.text_scale + style.padding.size()[1],
         },
-    }, .{
-        .scale = 1,
-        .color = style.background_color,
-    });
+        style.background_image.image,
+        style.background_image.inset,
+        .{
+            .scale = 1,
+            .color = style.background_color,
+        },
+    );
 
     const pre_cursor_size = style.text_font.textSize(this.text.items[0..this.cursor_pos], style.text_scale);
 
@@ -333,7 +338,7 @@ fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
     const pre_selection_size = style.text_font.textSize(this.text.items[0..selection_start], style.text_scale);
     const selection_size = style.text_font.textSize(this.text.items[selection_start..selection_end], style.text_scale);
 
-    const text_rect = seizer.geometry.Rect(f32){
+    const text_rect = seizer.geometry.Rect(f64){
         .pos = .{
             rect.pos[0] + MARGIN[0] + style.padding.min[0],
             rect.pos[1] + MARGIN[1] + style.padding.min[1],
@@ -344,24 +349,25 @@ fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
         },
     };
 
-    const canvas = parent_canvas.scissored(text_rect);
+    var clipped_canvas = parent_canvas.transformed(.{ .clip = text_rect });
+    const canvas = clipped_canvas.canvas();
 
     _ = canvas.writeText(style.text_font, text_rect.pos, this.text.items, .{
         .scale = style.text_scale,
         .color = style.text_color,
     });
     if (this.stage.isFocused(this.element())) {
-        canvas.rect(
+        canvas.fillRect(
             .{ rect.pos[0] + MARGIN[0] + style.padding.min[0] + pre_cursor_size[0], rect.pos[1] + MARGIN[1] + style.padding.min[1] },
             .{ style.text_scale, style.text_font.line_height * style.text_scale },
             .{
                 .color = style.text_color,
             },
         );
-        canvas.rect(
+        canvas.fillRect(
             .{ rect.pos[0] + MARGIN[0] + style.padding.min[0] + pre_selection_size[0], rect.pos[1] + MARGIN[1] + style.padding.min[1] },
             .{ selection_size[0], selection_size[1] },
-            .{ .color = .{ 0xFF, 0xFF, 0xFF, 0xAA } },
+            .{ .color = SELECTION_COLOR },
         );
     }
 }
@@ -418,7 +424,7 @@ pub fn insertReplacingSelectedText(this: *@This(), new_text: []const u8) !void {
 }
 
 const seizer = @import("../../seizer.zig");
-const Rect = seizer.geometry.Rect(f32);
+const Rect = seizer.geometry.Rect(f64);
 const Element = ui.Element;
 const ui = @import("../../ui.zig");
 const Canvas = @import("../../Canvas.zig");
