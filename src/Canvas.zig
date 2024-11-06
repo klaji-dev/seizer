@@ -204,11 +204,8 @@ pub fn textLayoutWriter(this: @This(), font: *const Font, options: TextLayoutOpt
     };
 }
 
-pub fn clipped(this: @This(), clip_rect: seizer.geometry.Rect(f64)) Transformed {
-    return Transformed{
-        .parent = this,
-        .clip_area = clip_rect.toAABB(),
-    };
+pub fn transformed(this: @This(), options: Transformed.InitOptions) Transformed {
+    return Transformed.init(this, options);
 }
 
 const WriteGlyphContext = struct {

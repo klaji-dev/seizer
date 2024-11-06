@@ -259,7 +259,7 @@ fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
         .color = this.bg_color,
     });
 
-    var clipped_canvas = parent_canvas.clipped(rect);
+    var clipped_canvas = parent_canvas.transformed(.{ .clip = rect });
     const canvas = clipped_canvas.canvas();
 
     // transform before sending the points to the canvas so that line size is the same size regardless of zoom
