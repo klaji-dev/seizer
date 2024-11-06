@@ -825,13 +825,10 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             const min_tile_pos = this.tilePosFromOffset(min_offset);
             const max_tile_pos = this.tilePosFromOffset(max_offset);
 
-            const size_in_tiles = [2]u32{
-                this.size_px[0] / tile_size[0],
-                this.size_px[1] / tile_size[1],
-            };
+            const size_in_tiles = sizeInTiles(this.size_px);
 
-            for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
-                for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0]) |tile_x| {
+            for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1] + 1) |tile_y| {
+                for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0] + 1) |tile_x| {
                     const tile_index: u32 = @intCast(tile_y * size_in_tiles[0] + tile_x);
                     const tile = &this.tiles[tile_index];
 
