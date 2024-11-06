@@ -1,4 +1,5 @@
 pub const Font = @import("./Canvas/Font.zig");
+pub const Transformed = @import("./Canvas/Transformed.zig");
 
 const Canvas = @This();
 
@@ -200,6 +201,13 @@ pub fn textLayoutWriter(this: @This(), font: *const Font, options: TextLayoutOpt
             .current_offset = options.pos,
             .options = .{ .pos = options.pos, .scale = options.scale },
         },
+    };
+}
+
+pub fn clipped(this: @This(), clip_rect: seizer.geometry.Rect(f64)) Transformed {
+    return Transformed{
+        .parent = this,
+        .clip_area = clip_rect.toAABB(),
     };
 }
 
