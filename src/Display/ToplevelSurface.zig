@@ -235,6 +235,8 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
 pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
+    if (src_image.size[0] == 0 or src_image.size[1] == 0) return;
+
     const start_pos = [2]u32{
         @min(@as(u32, @intFromFloat(@floor(@max(@min(dst_pos[0], dst_pos[0] + dst_size[0]), 0)))), this.current_configuration.window_size[0]),
         @min(@as(u32, @intFromFloat(@floor(@max(@min(dst_pos[1], dst_pos[1] + dst_size[1]), 0)))), this.current_configuration.window_size[1]),
@@ -253,8 +255,8 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
         for (start_pos[0]..end_pos[0]) |x| {
             const pos = [2]f64{ @floatFromInt(x), @floatFromInt(y) };
             const texture_coord = [2]f64{
-                std.math.clamp(((pos[0] - dst_pos[0]) / dst_size[0]) * src_size[0], 0, src_size[0]),
-                std.math.clamp(((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1], 0, src_size[1]),
+                std.math.clamp(((pos[0] - dst_pos[0]) / dst_size[0]) * src_size[0], 0, src_size[0] - 1),
+                std.math.clamp(((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1], 0, src_size[1] - 1),
             };
             const dst_pixel = this.framebuffer.getPixel(.{ @intCast(x), @intCast(y) });
             const src_pixel = src_image.getPixel(.{
