@@ -13,7 +13,7 @@ const Example = enum {
     ui_stage,
     multi_window,
     // file_browser,
-    // ui_view_image,
+    ui_view_image,
     ui_plot_sine,
     // colormapped_image,
     canvas,

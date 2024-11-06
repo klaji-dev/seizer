@@ -1,34 +1,25 @@
 pub const main = seizer.main;
 
+var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
 var display: seizer.Display = undefined;
-var window_global: *seizer.Display.Window = undefined;
-var gfx: seizer.Graphics = undefined;
-var swapchain_opt: ?*seizer.Graphics.Swapchain = null;
-
-var ui_texture: *seizer.Graphics.Texture = undefined;
-var character_texture: *seizer.Graphics.Texture = undefined;
+var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
+var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
+var input_listener: seizer.Display.ToplevelSurface.OnInputListener = undefined;
 
 var font: seizer.Canvas.Font = undefined;
-var canvas: seizer.Canvas = undefined;
-var stage: *seizer.ui.Stage = undefined;
+var ui_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
+var character_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
+var _stage: *seizer.ui.Stage = undefined;
 
 pub fn init() !void {
-    display = try seizer.Display.create(seizer.platform.allocator(), seizer.platform.loop(), .{});
-    errdefer display.destroy();
+    try display.init(gpa.allocator(), seizer.getLoop());
 
-    gfx = try seizer.Graphics.create(seizer.platform.allocator(), .{});
-    errdefer gfx.destroy();
-
-    window_global = try display.createWindow(.{
-        .title = "UI Stage - Seizer Example",
-        .size = .{ 640, 480 },
-        .on_event = onWindowEvent,
-        .on_render = render,
-    });
+    try display.initToplevelSurface(&toplevel_surface, .{});
+    toplevel_surface.setOnInput(&input_listener, onToplevelInputEvent, null);
+    toplevel_surface.setOnRender(&render_listener, onRender, null);
 
     font = try seizer.Canvas.Font.fromFileContents(
-        seizer.platform.allocator(),
-        gfx,
+        gpa.allocator(),
         @embedFile("./assets/PressStart2P_8.fnt"),
         &.{
             .{ .name = "PressStart2P_8.png", .contents = @embedFile("./assets/PressStart2P_8.png") },
@@ -36,76 +27,65 @@ pub fn init() !void {
     );
     errdefer font.deinit();
 
-    canvas = try seizer.Canvas.init(seizer.platform.allocator(), gfx, .{});
-    errdefer canvas.deinit();
+    ui_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
+    errdefer ui_image.free(gpa.allocator());
 
-    var ui_image = try seizer.zigimg.Image.fromMemory(seizer.platform.allocator(), @embedFile("./assets/ui.png"));
-    defer ui_image.deinit();
-
-    const ui_image_size = [2]u32{ @intCast(ui_image.width), @intCast(ui_image.height) };
-
-    ui_texture = try gfx.createTexture(ui_image.toUnmanaged(), .{});
-    errdefer gfx.destroyTexture(ui_texture);
-
-    var character_image = try seizer.zigimg.Image.fromMemory(seizer.platform.allocator(), @embedFile("./assets/wedge.png"));
-    defer character_image.deinit();
-
-    character_texture = try gfx.createTexture(character_image.toUnmanaged(), .{});
-    errdefer gfx.destroyTexture(character_texture);
+    character_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
+    errdefer character_image.free(gpa.allocator());
 
     // initialize ui stage and elements
-    stage = try seizer.ui.Stage.create(seizer.platform.allocator(), .{
+    _stage = try seizer.ui.Stage.create(gpa.allocator(), .{
         .padding = .{
             .min = .{ 16, 16 },
             .max = .{ 16, 16 },
         },
         .text_font = &font,
         .text_scale = 1,
-        .text_color = [4]u8{ 0xFF, 0xFF, 0xFF, 0xFF },
-        .background_image = seizer.NinePatch.initv(ui_texture, ui_image_size, .{ .pos = .{ 0, 0 }, .size = .{ 48, 48 } }, .{ 16, 16 }),
-        .background_color = [4]u8{ 0xFF, 0xFF, 0xFF, 0xFF },
+        .text_color = seizer.color.argbf32_premultiplied.WHITE,
+        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
+        .background_color = seizer.color.argbf32_premultiplied.WHITE,
     });
-    errdefer stage.destroy();
+    errdefer _stage.destroy();
 
-    var flexbox = try seizer.ui.Element.FlexBox.create(stage);
+    var flexbox = try seizer.ui.Element.FlexBox.create(_stage);
     defer flexbox.element().release();
     flexbox.justification = .center;
     flexbox.cross_align = .center;
 
-    const frame = try seizer.ui.Element.Frame.create(stage);
+    const frame = try seizer.ui.Element.Frame.create(_stage);
     defer frame.element().release();
 
-    const frame_flexbox = try seizer.ui.Element.FlexBox.create(stage);
+    const frame_flexbox = try seizer.ui.Element.FlexBox.create(_stage);
     defer frame_flexbox.element().release();
     frame_flexbox.cross_align = .center;
 
-    const title_label = try seizer.ui.Element.Label.create(stage, "Images in PanZoom");
+    const title_label = try seizer.ui.Element.Label.create(_stage, "Images in PanZoom");
     defer title_label.element().release();
-    title_label.style = stage.default_style.with(.{
-        .text_color = .{ 0x00, 0x00, 0x00, 0xFF },
-        .background_image = seizer.NinePatch.initv(ui_texture, ui_image_size, .{ .pos = .{ 48, 0 }, .size = .{ 48, 48 } }, .{ 16, 16 }),
+    title_label.style = _stage.default_style.with(.{
+        .text_color = seizer.color.argbf32_premultiplied.BLACK,
+        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 48, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
     });
 
-    const pan_zoom = try seizer.ui.Element.PanZoom.create(stage);
+    const pan_zoom = try seizer.ui.Element.PanZoom.create(_stage);
     defer pan_zoom.element().release();
 
-    const pan_zoom_flexbox = try seizer.ui.Element.FlexBox.create(stage);
+    const pan_zoom_flexbox = try seizer.ui.Element.FlexBox.create(_stage);
     defer pan_zoom_flexbox.element().release();
 
-    const character_image_element = try seizer.ui.Element.Image.create(stage, character_texture, .{ @intCast(character_image.width), @intCast(character_image.height) });
+    const character_image_element = try seizer.ui.Element.Image.create(_stage, character_image);
     defer character_image_element.element().release();
 
-    const image_element = try seizer.ui.Element.Image.create(stage, ui_texture, ui_image_size);
+    const image_element = try seizer.ui.Element.Image.create(_stage, ui_image);
     defer image_element.element().release();
 
-    const hello_button = try seizer.ui.Element.Button.create(stage, "Hello");
+    const hello_button = try seizer.ui.Element.Button.create(_stage, "Hello");
     defer hello_button.element().release();
 
-    const text_field = try seizer.ui.Element.TextField.create(stage);
+    const text_field = try seizer.ui.Element.TextField.create(_stage);
     defer text_field.element().release();
 
     // put elements into containers
-    stage.setRoot(flexbox.element());
+    _stage.setRoot(flexbox.element());
 
     try flexbox.appendChild(frame.element());
 
@@ -122,59 +102,39 @@ pub fn init() !void {
     try pan_zoom_flexbox.appendChild(text_field.element());
 
     // setup global deinit callback
-    seizer.platform.setDeinitCallback(deinit);
+    seizer.setDeinit(deinit);
 }
 
 pub fn deinit() void {
+    _stage.destroy();
+
     font.deinit();
-    display.destroyWindow(window_global);
-    if (swapchain_opt) |swapchain| gfx.destroySwapchain(swapchain);
-    stage.destroy();
-    gfx.destroyTexture(character_texture);
-    gfx.destroyTexture(ui_texture);
-    canvas.deinit();
-    gfx.destroy();
-    display.destroy();
+    character_image.free(gpa.allocator());
+    ui_image.free(gpa.allocator());
+
+    toplevel_surface.deinit();
+    display.deinit();
+    _ = gpa.deinit();
 }
 
-fn onWindowEvent(window: *seizer.Display.Window, event: seizer.Display.Window.Event) !void {
-    _ = window;
-    switch (event) {
-        .should_close => seizer.platform.setShouldExit(true),
-        .resize, .rescale => {
-            if (swapchain_opt) |swapchain| {
-                gfx.destroySwapchain(swapchain);
-                swapchain_opt = null;
-            }
-            stage.needs_layout = true;
-        },
-        .input => |input| _ = stage.processEvent(input),
+fn onToplevelInputEvent(listener: *seizer.Display.ToplevelSurface.OnInputListener, surface: *seizer.Display.ToplevelSurface, event: seizer.input.Event) !void {
+    _ = listener;
+    if (_stage.processEvent(event)) |_| {
+        try surface.requestAnimationFrame();
     }
+    try display.connection.sendRequest(@TypeOf(surface.wl_surface)._SPECIFIED_INTERFACE, surface.wl_surface, .commit, .{});
 }
 
-fn render(window: *seizer.Display.Window) !void {
-    const window_size = display.windowGetSize(window);
-    const window_scale = display.windowGetScale(window);
+fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface: *seizer.Display.ToplevelSurface) anyerror!void {
+    _ = listener;
 
-    const swapchain = swapchain_opt orelse create_swapchain: {
-        const new_swapchain = try gfx.createSwapchain(display, window, .{ .size = window_size, .scale = window_scale });
-        swapchain_opt = new_swapchain;
-        break :create_swapchain new_swapchain;
-    };
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0, .g = 0, .b = 0, .a = 1.0 });
 
-    const render_buffer = try gfx.swapchainGetRenderBuffer(swapchain, .{});
+    _stage.needs_layout = true;
+    _stage.render(canvas, canvas.size());
 
-    const c = canvas.begin(render_buffer, .{
-        .window_size = window_size,
-        .window_scale = window_scale,
-        .clear_color = .{ 0.7, 0.5, 0.5, 1.0 },
-    });
-
-    stage.render(c, window_size);
-
-    canvas.end(render_buffer);
-
-    try gfx.swapchainPresentRenderBuffer(display, window, swapchain, render_buffer);
+    try surface.present();
 }
 
 const seizer = @import("seizer");
