@@ -6,6 +6,7 @@ var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
 var shield_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
+var cursor_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
@@ -17,7 +18,7 @@ pub fn init() !void {
         gpa.allocator(),
         gpa.allocator(),
         .inherit,
-        null,
+        .x16,
         &shield_icon_tvg,
     );
     defer shield_image_tvg.deinit(gpa.allocator());
@@ -35,10 +36,33 @@ pub fn init() !void {
             .convertAlphaModelTo(.premultiplied);
     }
 
+    var cursor_image_tvg = try seizer.tvg.rendering.renderBuffer(
+        gpa.allocator(),
+        gpa.allocator(),
+        .inherit,
+        .x16,
+        @embedFile("assets/cursor_none.tvg"),
+    );
+    defer cursor_image_tvg.deinit(gpa.allocator());
+
+    cursor_image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).alloc(
+        gpa.allocator(),
+        .{ cursor_image_tvg.width, cursor_image_tvg.width },
+    );
+    errdefer cursor_image.free(gpa.allocator());
+
+    for (cursor_image.pixels[0 .. cursor_image.size[0] * cursor_image.size[1]], cursor_image_tvg.pixels) |*out, in| {
+        out.* = seizer.color.argb(seizer.color.sRGB8, .straight, u8).init(@enumFromInt(in.b), @enumFromInt(in.g), @enumFromInt(in.r), in.a)
+            .convertColorTo(f32)
+            .convertAlphaTo(f32)
+            .convertAlphaModelTo(.premultiplied);
+    }
+
     seizer.setDeinit(deinit);
 }
 
 pub fn deinit() void {
+    cursor_image.free(gpa.allocator());
     shield_image.free(gpa.allocator());
     toplevel_surface.deinit();
     display.deinit();
@@ -52,6 +76,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     canvas.blit(.{ 50, 50 }, shield_image);
+    canvas.blit(.{ 100, 50 }, cursor_image);
 
     try surface.present();
 }
