@@ -11,7 +11,7 @@ const Example = enum {
     bicubic_filter,
     tinyvg,
     ui_stage,
-    // multi_window,
+    multi_window,
     // file_browser,
     // ui_view_image,
     // ui_plot_sine,
