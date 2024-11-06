@@ -870,12 +870,17 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
 
         pub fn drawLine(this: @This(), a: [2]f32, b: [2]f32, r: [2]f32, colors: [2]Pixel) void {
             const rmax = @max(r[0], r[1]);
-            const px0: usize = @intFromFloat(@max(0, @floor(@min(a[0], b[0]) - rmax)));
-            const px1: usize = @intFromFloat(@max(0, @ceil(@max(a[0], b[0]) + rmax)));
-            const py0: usize = @intFromFloat(@max(0, @floor(@min(a[1], b[1]) - rmax)));
-            const py1: usize = @intFromFloat(@max(0, @ceil(@max(a[1], b[1]) + rmax)));
-            std.debug.assert(px1 - px0 > 0 and py1 - py0 > 0);
-            std.debug.assert(px1 != px0 and py1 != py0);
+
+            const sizef: [2]f32 = .{
+                @floatFromInt(this.size_px[0]),
+                @floatFromInt(this.size_px[1]),
+            };
+
+            const px0: usize = @intFromFloat(std.math.clamp(@floor(@min(a[0], b[0]) - rmax), 0, sizef[0]));
+            const px1: usize = @intFromFloat(std.math.clamp(@ceil(@max(a[0], b[0]) + rmax), 0, sizef[0]));
+            const py0: usize = @intFromFloat(std.math.clamp(@floor(@min(a[1], b[1]) - rmax), 0, sizef[1]));
+            const py1: usize = @intFromFloat(std.math.clamp(@ceil(@max(a[1], b[1]) + rmax), 0, sizef[1]));
+
             for (py0..py1) |y| {
                 for (px0..px1) |x| {
                     const capsule, const h = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
