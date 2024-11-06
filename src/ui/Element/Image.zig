@@ -2,23 +2,15 @@ stage: *ui.Stage,
 reference_count: usize = 1,
 parent: ?Element = null,
 
-texture: *seizer.Graphics.Texture,
-texture_size: [2]u32,
-source_rect: seizer.geometry.Rect(f32),
+image: seizer.image.Image(seizer.color.argbf32_premultiplied),
 
-pub fn create(stage: *ui.Stage, texture: *seizer.Graphics.Texture, texture_size: [2]u32) !*@This() {
+pub fn create(stage: *ui.Stage, image: seizer.image.Image(seizer.color.argbf32_premultiplied)) !*@This() {
     const this = try stage.gpa.create(@This());
     errdefer stage.gpa.destroy(this);
 
     this.* = .{
         .stage = stage,
-
-        .texture = texture,
-        .texture_size = texture_size,
-        .source_rect = .{
-            .pos = .{ 0, 0 },
-            .size = [2]f32{ @floatFromInt(texture_size[0]), @floatFromInt(texture_size[1]) },
-        },
+        .image = image,
     };
     return this;
 }
@@ -66,27 +58,25 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-fn getMinSize(this: *@This()) [2]f32 {
-    return this.source_rect.size;
+fn getMinSize(this: *@This()) [2]f64 {
+    return .{
+        @floatFromInt(this.image.size[0]),
+        @floatFromInt(this.image.size[1]),
+    };
 }
 
-fn render(this: *@This(), canvas: Canvas.Transformed, rect: Rect) void {
-    const texture_sizef = [2]f32{
-        @floatFromInt(this.texture_size[0]),
-        @floatFromInt(this.texture_size[1]),
-    };
-    canvas.rect(rect.pos, this.source_rect.size, .{
-        .texture = this.texture,
-        .uv = .{
-            .min = .{ this.source_rect.pos[0] / texture_sizef[0], this.source_rect.pos[1] / texture_sizef[1] },
-            .max = .{ (this.source_rect.pos[0] + this.source_rect.size[0]) / texture_sizef[0], (this.source_rect.pos[1] + this.source_rect.size[1]) / texture_sizef[1] },
-        },
-    });
+fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
+    // consr source_rect = .{
+    //     .pos = .{ 0, 0 },
+    //     .size = .{ @floatFromInt(image.size[0]), @floatFromInt(image.size[1]) },
+    // };
+
+    canvas.textureRect(rect.pos, rect.size, this.image, .{});
 }
 
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f32);
+const Rect = seizer.geometry.Rect(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");
