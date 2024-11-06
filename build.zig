@@ -17,6 +17,7 @@ const Example = enum {
     ui_plot_sine,
     colormapped_image,
     canvas,
+    cutscene,
 };
 
 pub fn build(b: *Builder) !void {
@@ -61,6 +62,11 @@ pub fn build(b: *Builder) !void {
         .optimize = optimize,
     });
 
+    const zigcoro_dep = b.dependency("zigcoro", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     // generate additional wayland protocol definitions with shimizu-scanner
     const generate_wayland_unstable_zig_cmd = b.addRunArtifact(shimizu_dep.artifact("shimizu-scanner"));
     generate_wayland_unstable_zig_cmd.addFileArg(b.path("dep/wayland-protocols/xdg-decoration-unstable-v1.xml"));
@@ -98,6 +104,7 @@ pub fn build(b: *Builder) !void {
             .{ .name = "tvg", .module = tinyvg.module("tvg") },
             .{ .name = "xev", .module = libxev.module("xev") },
             .{ .name = "AngelCodeFont", .module = angelcode_font_module },
+            .{ .name = "libcoro", .module = zigcoro_dep.module("libcoro") },
         },
     });
 

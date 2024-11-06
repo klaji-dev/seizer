@@ -12,6 +12,7 @@ pub const Display = @import("./Display.zig");
 // re-exported libraries
 pub const tvg = @import("tvg");
 pub const xev = @import("xev");
+pub const libcoro = @import("libcoro");
 
 /// Seizer version
 pub const version = std.SemanticVersion{

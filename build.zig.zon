@@ -35,5 +35,9 @@
             .url = "https://github.com/hendriknielaender/zBench/archive/0d5417d53e38026503cf993ef9aa24a5fa9554dc.tar.gz",
             .hash = "12202e943486d4351fcc633aed880df43e9025f8866c746619da284a3048ef529233",
         },
+        .zigcoro = .{
+            .url = "git+https://github.com/rsepassi/zigcoro#ca58a912c3c0957d6aab0405f4c78f68e1dababb",
+            .hash = "12204959321c5e16a70944b8cdf423f0fa2bdf7db1f72bacc89b8af85acc4c054d9c",
+        },
     },
 }

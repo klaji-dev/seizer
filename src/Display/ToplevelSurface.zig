@@ -125,6 +125,8 @@ pub fn requestAnimationFrame(this: *@This()) !void {
     frame_callback.setEventListener(&this.frame_callback_listener, onFrameCallback, this);
 
     this.frame_callback = frame_callback.id;
+
+    try wl_surface.sendRequest(.commit, .{});
 }
 
 pub fn present(this: *@This()) !void {
@@ -369,29 +371,29 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
         }
     }
 
-    const tiles_per_bin = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).sizeInTiles(.{ binning_size, binning_size });
-    if (this.command_hash.items.len == this.command_hash_prev.items.len) {
-        // See if the we can skip rendering
-        for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
-            if (h.final() != hp.final()) {
-                const bin_x = i % bin_count[0];
-                const bin_y = i / bin_count[1];
-                const tile_start_x: u32 = @intCast(bin_x * tiles_per_bin[0]);
-                const tile_start_y: u32 = @intCast(bin_y * tiles_per_bin[1]);
-                const tile_offset = [2]u32{ tile_start_x, tile_start_y };
-                const tile_slice = this.framebuffer.slice(tile_offset, tiles_per_bin);
-                // Hash mismatch! This bin needs to be updated
-                for (command.items(.tag), command.items(.renderData)) |tag, data| {
-                    this.executeCanvasCommand(tag, data, tile_slice);
-                }
-            }
-        }
-    } else {
-        // First frame or resized, draw everything
-        for (command.items(.tag), command.items(.renderData)) |tag, data| {
-            this.executeCanvasCommand(tag, data, this.framebuffer);
-        }
+    //const tiles_per_bin = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).sizeInTiles(.{ binning_size, binning_size });
+    //if (this.command_hash.items.len == this.command_hash_prev.items.len) {
+    //    // See if the we can skip rendering
+    //    for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
+    //        if (h.final() != hp.final()) {
+    //            const bin_x = i % bin_count[0];
+    //            const bin_y = i / bin_count[1];
+    //            const tile_start_x: u32 = @intCast(bin_x * tiles_per_bin[0]);
+    //            const tile_start_y: u32 = @intCast(bin_y * tiles_per_bin[1]);
+    //            const tile_offset = [2]u32{ tile_start_x, tile_start_y };
+    //            const tile_slice = this.framebuffer.slice(tile_offset, tiles_per_bin);
+    //            // Hash mismatch! This bin needs to be updated
+    //            for (command.items(.tag), command.items(.renderData)) |tag, data| {
+    //                this.executeCanvasCommand(tag, data, tile_slice);
+    //            }
+    //        }
+    //    }
+    //} else {
+    // First frame or resized, draw everything
+    for (command.items(.tag), command.items(.renderData)) |tag, data| {
+        this.executeCanvasCommand(tag, data, this.framebuffer);
     }
+    //}
 
     // Swap the memory used for current and previous hash lists
     const hash_list = this.command_hash_prev;
