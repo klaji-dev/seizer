@@ -3,25 +3,28 @@ reference_count: usize = 1,
 parent: ?Element = null,
 
 lines: std.StringArrayHashMapUnmanaged(Line) = .{},
-x_range: [2]f32 = .{ -1, 1 },
-y_range: [2]f32 = .{ -1, 1 },
+x_range: [2]f64 = .{ -1, 1 },
+y_range: [2]f64 = .{ -1, 1 },
 y_axis_type: AxisType = .linear,
 
-pan_start: ?[2]f32 = null,
+pan_start: ?[2]f64 = null,
 
-hovered_x: f32 = 0,
-x_view_range: ?[2]f32 = null,
-drag_start_pos: ?[2]f32 = null,
+hovered_x: f64 = 0,
+x_view_range: ?[2]f64 = null,
+drag_start_pos: ?[2]f64 = null,
 
-bg_color: [4]u8 = .{ 0x00, 0x00, 0x00, 0xFF },
+bg_color: seizer.color.argbf32_premultiplied = seizer.color.argbf32_premultiplied.BLACK,
 
-output_size: [2]f32 = .{ 0, 0 },
+output_size: [2]f64 = .{ 0, 0 },
+
+const HOVER_COLOR = seizer.color.fromSRGB(0xff, 0xff, 0x00, 0xff);
+const SELECT_COLOR = seizer.color.fromSRGB(0xff, 0xff, 0x00, 0x80);
 
 pub const Line = struct {
-    offset: [2]f32 = .{ 0, 0 },
-    x: std.ArrayListUnmanaged(f32) = .{},
-    y: std.ArrayListUnmanaged(f32) = .{},
-    color: [4]u8 = .{ 0xFF, 0xFF, 0xFF, 0xFF },
+    offset: [2]f64 = .{ 0, 0 },
+    x: std.ArrayListUnmanaged(f64) = .{},
+    y: std.ArrayListUnmanaged(f64) = .{},
+    color: seizer.color.argbf32_premultiplied = seizer.color.argbf32_premultiplied.WHITE,
 };
 
 pub const AxisType = enum {
@@ -102,14 +105,14 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                     },
                 );
 
-                const new_min = seizer.geometry.mat4.mulVec(f32, inverse, .{
+                const new_min = seizer.geometry.mat4.mulVec(f64, inverse, .{
                     -hover.pos[0],
                     -hover.pos[1],
                     0,
                     1,
                 })[0..2].*;
 
-                this.x_view_range = [2]f32{
+                this.x_view_range = [2]f64{
                     new_min[0],
                     new_min[0] + size,
                 };
@@ -128,7 +131,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                 },
             );
 
-            this.hovered_x = seizer.geometry.mat4.mulVec(f32, inverse, .{ hover.pos[0], 0, 0, 1 })[0];
+            this.hovered_x = seizer.geometry.mat4.mulVec(f64, inverse, .{ hover.pos[0], 0, 0, 1 })[0];
 
             return this.element();
         },
@@ -145,7 +148,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                             .{ this.x_range[1], this.y_range[1] },
                         );
 
-                        this.hovered_x = seizer.geometry.mat4.mulVec(f32, inverse, .{ click.pos[0], 0, 0, 1 })[0];
+                        this.hovered_x = seizer.geometry.mat4.mulVec(f64, inverse, .{ click.pos[0], 0, 0, 1 })[0];
 
                         return this.element();
                     }
@@ -162,7 +165,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                             this.y_range[1],
                         },
                     );
-                    const pos = seizer.geometry.mat4.mulVec(f32, inverse, .{
+                    const pos = seizer.geometry.mat4.mulVec(f64, inverse, .{
                         click.pos[0],
                         click.pos[1],
                         0,
@@ -191,7 +194,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                                 this.y_range[1],
                             },
                         );
-                        this.hovered_x = seizer.geometry.mat4.mulVec(f32, new_transform, .{
+                        this.hovered_x = seizer.geometry.mat4.mulVec(f64, new_transform, .{
                             click.pos[0],
                             click.pos[1],
                             0,
@@ -217,7 +220,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                             },
                         );
 
-                        this.pan_start = seizer.geometry.mat4.mulVec(f32, inverse, .{
+                        this.pan_start = seizer.geometry.mat4.mulVec(f64, inverse, .{
                             click.pos[0],
                             click.pos[1],
                             0,
@@ -240,24 +243,24 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return this.element();
 }
 
-pub fn getMinSize(this: *@This()) [2]f32 {
+pub fn getMinSize(this: *@This()) [2]f64 {
     _ = this;
     return .{ 1, 1 };
 }
 
-pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
+pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     _ = min_size;
     this.output_size = max_size;
     return max_size;
 }
 
-fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
-    parent_canvas.rect(rect.pos, rect.size, .{
+fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
+    parent_canvas.fillRect(rect.pos, rect.size, .{
         .color = this.bg_color,
     });
 
-    const canvas = parent_canvas
-        .scissored(rect);
+    var clipped_canvas = parent_canvas.clipped(rect);
+    const canvas = clipped_canvas.canvas();
 
     // transform before sending the points to the canvas so that line size is the same size regardless of zoom
     const transform = rangeTransform(
@@ -285,8 +288,8 @@ fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
                 .log => @log(y1_raw),
             };
 
-            const line_pos0 = seizer.geometry.mat4.mulVec(f32, transform, .{ x0 + line.offset[0], y0, 0, 1 })[0..2].*;
-            const line_pos1 = seizer.geometry.mat4.mulVec(f32, transform, .{ x1 + line.offset[0], y1, 0, 1 })[0..2].*;
+            const line_pos0 = seizer.geometry.mat4.mulVec(f64, transform, .{ x0 + line.offset[0], y0, 0, 1 })[0..2].*;
+            const line_pos1 = seizer.geometry.mat4.mulVec(f64, transform, .{ x1 + line.offset[0], y1, 0, 1 })[0..2].*;
 
             canvas.line(
                 .{ rect.pos[0] + line_pos0[0], rect.pos[1] + line_pos0[1] },
@@ -296,26 +299,26 @@ fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
         }
     }
 
-    const hover_hline_pos = seizer.geometry.mat4.mulVec(f32, transform, .{ this.hovered_x, 0, 0, 1 })[0..2].*;
+    const hover_hline_pos = seizer.geometry.mat4.mulVec(f64, transform, .{ this.hovered_x, 0, 0, 1 })[0..2].*;
     if (this.drag_start_pos) |start_pos| {
-        const drag_pos = seizer.geometry.mat4.mulVec(f32, transform, .{ start_pos[0], 0, 0, 1 })[0..2].*;
-        canvas.rect(
+        const drag_pos = seizer.geometry.mat4.mulVec(f64, transform, .{ start_pos[0], 0, 0, 1 })[0..2].*;
+        canvas.fillRect(
             .{ rect.pos[0] + drag_pos[0], rect.pos[1] },
             .{ hover_hline_pos[0] - drag_pos[0], rect.size[1] },
-            .{ .color = .{ 0xFF, 0xFF, 0x00, 0x80 } },
+            .{ .color = SELECT_COLOR },
         );
     }
     if (std.meta.eql(this.stage.hovered_element, this.element())) {
         canvas.line(
             .{ rect.pos[0] + hover_hline_pos[0], rect.pos[1] },
             .{ rect.pos[0] + hover_hline_pos[0], rect.pos[1] + rect.size[1] },
-            .{ .color = .{ 0xFF, 0xFF, 0x00, 0xFF } },
+            .{ .color = HOVER_COLOR },
         );
     }
 }
 
-pub fn rangeTransform(out_size: [2]f32, axis_types: [2]AxisType, min_coord_raw: [2]f32, max_coord_raw: [2]f32) [4][4]f32 {
-    const min_coord = [2]f32{
+pub fn rangeTransform(out_size: [2]f64, axis_types: [2]AxisType, min_coord_raw: [2]f64, max_coord_raw: [2]f64) [4][4]f64 {
+    const min_coord = [2]f64{
         switch (axis_types[0]) {
             .linear => min_coord_raw[0],
             .log => @log(min_coord_raw[0]),
@@ -326,7 +329,7 @@ pub fn rangeTransform(out_size: [2]f32, axis_types: [2]AxisType, min_coord_raw: 
         },
     };
 
-    const size = [2]f32{
+    const size = [2]f64{
         switch (axis_types[0]) {
             .linear => max_coord_raw[0] - min_coord_raw[0],
             .log => @log(max_coord_raw[0]) - @log(min_coord_raw[1]),
@@ -338,24 +341,24 @@ pub fn rangeTransform(out_size: [2]f32, axis_types: [2]AxisType, min_coord_raw: 
     };
 
     return seizer.geometry.mat4.mulAll(
-        f32,
+        f64,
         &.{
-            seizer.geometry.mat4.scale(f32, .{
+            seizer.geometry.mat4.scale(f64, .{
                 1,
                 -1,
                 1,
             }),
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 0,
                 -out_size[1],
                 0,
             }),
-            seizer.geometry.mat4.scale(f32, .{
+            seizer.geometry.mat4.scale(f64, .{
                 out_size[0] / size[0],
                 out_size[1] / size[1],
                 1,
             }),
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 -min_coord[0],
                 -min_coord[1],
                 0,
@@ -364,8 +367,8 @@ pub fn rangeTransform(out_size: [2]f32, axis_types: [2]AxisType, min_coord_raw: 
     );
 }
 
-pub fn rangeTransformInverse(out_size: [2]f32, axis_types: [2]AxisType, min_coord_raw: [2]f32, max_coord_raw: [2]f32) [4][4]f32 {
-    const min_coord = [2]f32{
+pub fn rangeTransformInverse(out_size: [2]f64, axis_types: [2]AxisType, min_coord_raw: [2]f64, max_coord_raw: [2]f64) [4][4]f64 {
+    const min_coord = [2]f64{
         switch (axis_types[0]) {
             .linear => min_coord_raw[0],
             .log => @log(min_coord_raw[0]),
@@ -376,7 +379,7 @@ pub fn rangeTransformInverse(out_size: [2]f32, axis_types: [2]AxisType, min_coor
         },
     };
 
-    const size = [2]f32{
+    const size = [2]f64{
         switch (axis_types[0]) {
             .linear => max_coord_raw[0] - min_coord_raw[0],
             .log => @log(max_coord_raw[0]) - @log(min_coord_raw[1]),
@@ -388,24 +391,24 @@ pub fn rangeTransformInverse(out_size: [2]f32, axis_types: [2]AxisType, min_coor
     };
 
     return seizer.geometry.mat4.mulAll(
-        f32,
+        f64,
         &.{
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 min_coord[0],
                 min_coord[1],
                 0,
             }),
-            seizer.geometry.mat4.scale(f32, .{
+            seizer.geometry.mat4.scale(f64, .{
                 size[0] / out_size[0],
                 size[1] / out_size[1],
                 1,
             }),
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 0,
                 out_size[1],
                 0,
             }),
-            seizer.geometry.mat4.scale(f32, .{
+            seizer.geometry.mat4.scale(f64, .{
                 1,
                 -1,
                 1,
