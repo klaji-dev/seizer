@@ -3,18 +3,18 @@ reference_count: usize = 1,
 parent: ?Element = null,
 
 /// The size of the Canvas before zooming and panning
-size: [2]f32 = .{ 1, 1 },
+size: [2]f64 = .{ 1, 1 },
 /// The size of the Canvas after zooming and panning
-output_size: [2]f32 = .{ 1, 1 },
+output_size: [2]f64 = .{ 1, 1 },
 
 /// Value is log-scale, meaning that to get the actual scaling you need to do @exp(zoom)
-zoom: f32 = 0,
-pan: [2]f32 = .{ 0, 0 },
+zoom: f64 = 0,
+pan: [2]f64 = .{ 0, 0 },
 
-pan_start: ?[2]f32 = null,
-cursor_pos: [2]f32 = .{ 0, 0 },
+pan_start: ?[2]f64 = null,
+cursor_pos: [2]f64 = .{ 0, 0 },
 
-bg_color: [4]u8 = .{ 0x40, 0x40, 0x40, 0xFF },
+bg_color: seizer.color.argbf32_premultiplied = seizer.color.fromSRGB(0x40, 0x40, 0x40, 0xFF),
 
 children: std.AutoArrayHashMapUnmanaged(Element, void) = .{},
 systems: std.AutoArrayHashMapUnmanaged(?*anyopaque, System) = .{},
@@ -25,7 +25,7 @@ const System = struct {
     userdata: ?*anyopaque,
     render_fn: RenderFn,
 
-    const RenderFn = *const fn (userdata: ?*anyopaque, pan_zoom: *PanZoom, canvas: Canvas.Transformed) void;
+    const RenderFn = *const fn (userdata: ?*anyopaque, pan_zoom: *PanZoom, canvas: Canvas) void;
 };
 
 pub fn create(stage: *ui.Stage) !*@This() {
@@ -115,7 +115,7 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                     pan_start,
                 );
 
-                this.pan = seizer.geometry.mat4.mulVec(f32, pan_start_inverse, .{
+                this.pan = seizer.geometry.mat4.mulVec(f64, pan_start_inverse, .{
                     hover.pos[0],
                     hover.pos[1],
                     0,
@@ -147,8 +147,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
                 this.pan,
             );
 
-            const cursor_before = seizer.geometry.mat4.mulVec(f32, inverse, this.cursor_pos ++ [2]f32{ 0, 1 });
-            const cursor_after = seizer.geometry.mat4.mulVec(f32, new_inverse, this.cursor_pos ++ [2]f32{ 0, 1 });
+            const cursor_before = seizer.geometry.mat4.mulVec(f64, inverse, this.cursor_pos ++ [2]f64{ 0, 1 });
+            const cursor_after = seizer.geometry.mat4.mulVec(f64, new_inverse, this.cursor_pos ++ [2]f64{ 0, 1 });
 
             this.zoom = new_zoom;
             this.pan = .{
@@ -162,12 +162,12 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return this.element();
 }
 
-fn getMinSize(this: *@This()) [2]f32 {
+fn getMinSize(this: *@This()) [2]f64 {
     _ = this;
     return .{ 1, 1 };
 }
 
-pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
+pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     _ = min_size;
 
     this.size = .{ 0, 0 };
@@ -190,20 +190,25 @@ pub fn layout(this: *@This(), min_size: [2]f32, max_size: [2]f32) [2]f32 {
     return this.output_size;
 }
 
-fn render(this: *@This(), parent_canvas: Canvas.Transformed, rect: Rect) void {
-    parent_canvas.rect(rect.pos, rect.size, .{
+fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
+    parent_canvas.fillRect(rect.pos, rect.size, .{
         .color = this.bg_color,
     });
 
-    const canvas = parent_canvas
-        .scissored(rect)
-        .transformed(seizer.geometry.mat4.translate(f32, .{ rect.pos[0], rect.pos[1], 0 }))
-        .transformed(panZoomTransform(
-        rect.size,
-        this.size,
-        this.zoom,
-        this.pan,
-    ));
+    var transformed_canvas = parent_canvas.transformed(.{
+        .clip = rect,
+        .transform = seizer.geometry.mat4.mul(
+            f64,
+            panZoomTransform(
+                rect.size,
+                this.size,
+                this.zoom,
+                this.pan,
+            ),
+            seizer.geometry.mat4.translate(f64, .{ rect.pos[0], rect.pos[1], 0 }),
+        ),
+    });
+    const canvas = transformed_canvas.canvas();
 
     for (this.children.keys()) |child| {
         child.render(canvas, .{ .pos = .{ 0, 0 }, .size = this.size });
@@ -226,7 +231,7 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
         if (parent.getChildRect(this.element())) |rect_transform| {
             return .{
                 .rect = .{ .pos = .{ 0, 0 }, .size = this.size },
-                .transform = seizer.geometry.mat4.mul(f32, transform, rect_transform.transformWithTranslation()),
+                .transform = seizer.geometry.mat4.mul(f64, transform, rect_transform.transformWithTranslation()),
             };
         }
     }
@@ -236,7 +241,7 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
     };
 }
 
-pub fn panZoomTransform(out_size: [2]f32, child_size: [2]f32, zoom_ln: f32, pan: [2]f32) [4][4]f32 {
+pub fn panZoomTransform(out_size: [2]f64, child_size: [2]f64, zoom_ln: f64, pan: [2]f64) [4][4]f64 {
     const zoom = @exp(zoom_ln);
 
     const child_aspect = child_size[0] / child_size[1];
@@ -246,45 +251,45 @@ pub fn panZoomTransform(out_size: [2]f32, child_size: [2]f32, zoom_ln: f32, pan:
     const aspect = child_aspect / out_aspect;
 
     const size = if (aspect >= 1)
-        [2]f32{
+        [2]f64{
             out_size[0],
             out_size[1] / aspect,
         }
     else
-        [2]f32{
+        [2]f64{
             out_size[0] * aspect,
             out_size[1],
         };
 
     return seizer.geometry.mat4.mulAll(
-        f32,
+        f64,
         &.{
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 (out_size[0] - size[0]) / 2.0,
                 (out_size[1] - size[1]) / 2.0,
                 0,
             }),
-            seizer.geometry.mat4.scale(f32, .{
+            seizer.geometry.mat4.scale(f64, .{
                 size[0] / child_size[0],
                 size[1] / child_size[1],
                 1,
             }),
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 child_size[0] / 2.0,
                 child_size[1] / 2.0,
                 0,
             }),
-            seizer.geometry.mat4.scale(f32, .{
+            seizer.geometry.mat4.scale(f64, .{
                 zoom,
                 zoom,
                 1,
             }),
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 pan[0],
                 pan[1],
                 0,
             }),
-            seizer.geometry.mat4.translate(f32, .{
+            seizer.geometry.mat4.translate(f64, .{
                 -child_size[0] / 2.0,
                 -child_size[1] / 2.0,
                 0,
@@ -293,7 +298,7 @@ pub fn panZoomTransform(out_size: [2]f32, child_size: [2]f32, zoom_ln: f32, pan:
     );
 }
 
-pub fn panZoomInverse(out_size: [2]f32, child_size: [2]f32, zoom_ln: f32, pan: [2]f32) [4][4]f32 {
+pub fn panZoomInverse(out_size: [2]f64, child_size: [2]f64, zoom_ln: f64, pan: [2]f64) [4][4]f64 {
     const zoom = @exp(zoom_ln);
 
     const child_aspect = child_size[0] / child_size[1];
@@ -303,43 +308,43 @@ pub fn panZoomInverse(out_size: [2]f32, child_size: [2]f32, zoom_ln: f32, pan: [
     const aspect = child_aspect / out_aspect;
 
     const size = if (aspect >= 1)
-        [2]f32{
+        [2]f64{
             out_size[0],
             out_size[1] / aspect,
         }
     else
-        [2]f32{
+        [2]f64{
             out_size[0] * aspect,
             out_size[1],
         };
 
-    return seizer.geometry.mat4.mulAll(f32, &.{
-        seizer.geometry.mat4.translate(f32, .{
+    return seizer.geometry.mat4.mulAll(f64, &.{
+        seizer.geometry.mat4.translate(f64, .{
             child_size[0] / 2.0,
             child_size[1] / 2.0,
             0,
         }),
-        seizer.geometry.mat4.translate(f32, .{
+        seizer.geometry.mat4.translate(f64, .{
             -pan[0],
             -pan[1],
             0,
         }),
-        seizer.geometry.mat4.scale(f32, .{
+        seizer.geometry.mat4.scale(f64, .{
             1.0 / zoom,
             1.0 / zoom,
             1,
         }),
-        seizer.geometry.mat4.translate(f32, .{
+        seizer.geometry.mat4.translate(f64, .{
             -child_size[0] / 2.0,
             -child_size[1] / 2.0,
             0,
         }),
-        seizer.geometry.mat4.scale(f32, .{
+        seizer.geometry.mat4.scale(f64, .{
             1.0 / (size[0] / child_size[0]),
             1.0 / (size[1] / child_size[1]),
             1,
         }),
-        seizer.geometry.mat4.translate(f32, .{
+        seizer.geometry.mat4.translate(f64, .{
             -(out_size[0] - size[0]) / 2.0,
             -(out_size[1] - size[1]) / 2.0,
             0,
