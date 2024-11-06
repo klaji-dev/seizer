@@ -859,7 +859,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         }
 
         /// Returns the signed distance to a line segment
-        fn capsuleSDF(p: [2]f32, a: [2]f32, b: [2]f32, r: f32) f32 {
+        fn capsuleSDF(p: [2]f32, a: [2]f32, b: [2]f32, r: [2]f32) struct { f32, f32 } {
             const pax = p[0] - a[0];
             const pay = p[1] - a[1];
             const bax = b[0] - a[0];
@@ -867,31 +867,23 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             const h = std.math.clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
             const dx = pax - bax * h;
             const dy = pay - bay * h;
-            return @sqrt(dx * dx + dy * dy) - r;
+            const rh = std.math.lerp(r[0], r[1], h);
+            return .{ @sqrt(dx * dx + dy * dy) - rh, h };
         }
 
-        fn lineProgress(p: [2]f32, a: [2]f32, b: [2]f32) f32 {
-            const pax = p[0] - a[0];
-            const pay = p[1] - a[1];
-            const bax = b[0] - a[0];
-            const bay = b[1] - a[1];
-            const h = std.math.clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
-            return h;
-        }
-
-        pub fn drawLine(this: @This(), a: [2]f32, b: [2]f32, r: f32, colors: [2]Pixel) void {
-            const px0: usize = @intFromFloat(@floor(@min(a[0], b[0]) - r));
-            const px1: usize = @intFromFloat(@ceil(@max(a[0], b[0]) + r));
-            const py0: usize = @intFromFloat(@floor(@min(a[1], b[1]) - r));
-            const py1: usize = @intFromFloat(@ceil(@max(a[1], b[1]) + r));
+        pub fn drawLine(this: @This(), a: [2]f32, b: [2]f32, r: [2]f32, colors: [2]Pixel) void {
+            const rmax = @max(r[0], r[1]);
+            const px0: usize = @intFromFloat(@max(0, @floor(@min(a[0], b[0]) - rmax)));
+            const px1: usize = @intFromFloat(@max(0, @ceil(@max(a[0], b[0]) + rmax)));
+            const py0: usize = @intFromFloat(@max(0, @floor(@min(a[1], b[1]) - rmax)));
+            const py1: usize = @intFromFloat(@max(0, @ceil(@max(a[1], b[1]) + rmax)));
             std.debug.assert(px1 - px0 > 0 and py1 - py0 > 0);
             std.debug.assert(px1 != px0 and py1 != py0);
             for (py0..py1) |y| {
                 for (px0..px1) |x| {
-                    const h = lineProgress(.{ @floatFromInt(x), @floatFromInt(y) }, a, b);
+                    const capsule, const h = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
                     const color = colors[0].blend(colors[1], h);
                     const bg = this.getPixel(.{ @intCast(x), @intCast(y) });
-                    const capsule = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
                     const dist = std.math.clamp(0.5 - capsule, 0, 1);
                     const blended = bg.blend(color, dist);
                     this.setPixel(.{ @intCast(x), @intCast(y) }, blended);

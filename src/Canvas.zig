@@ -43,6 +43,7 @@ pub fn fillRect(this: @This(), pos: [2]f64, rect_size: [2]f64, options: RectOpti
 pub const LineOptions = struct {
     depth: f64 = 0.5,
     width: f64 = 1,
+    end_width: ?f64 = null,
     color: seizer.color.argbf32_premultiplied = seizer.color.argbf32_premultiplied.WHITE,
     end_color: ?seizer.color.argbf32_premultiplied = null,
 };

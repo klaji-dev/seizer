@@ -32,24 +32,28 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.line(.{ 5.5, 5.5 }, .{ 200.5, 200.5 }, .{
         .color = BLUE,
         .end_color = PINK,
+        .end_width = 2,
     });
 
     canvas.line(.{ 200.5, 200.5 }, .{ 200.5, 400.5 }, .{
         .color = PINK,
         .end_color = WHITE,
         .width = 2,
+        .end_width = 4,
     });
 
     canvas.line(.{ 200.5, 400.5 }, .{ 400.5, 200.5 }, .{
         .color = WHITE,
         .end_color = PINK,
         .width = 4,
+        .end_width = 8,
     });
 
     canvas.line(.{ 400.5, 200.5 }, .{ 400.5, 5.5 }, .{
         .color = PINK,
         .end_color = BLUE,
         .width = 8,
+        .end_width = 16,
     });
 
     try surface.present();
