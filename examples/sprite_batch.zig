@@ -6,7 +6,7 @@ var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
 var font: seizer.Canvas.Font = undefined;
-var player_image: seizer.image.Image(seizer.color.argbf32) = undefined;
+var player_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
 var sprites: std.MultiArrayList(Sprite) = .{};
 
 var spawn_timer_duration: u32 = 10;
@@ -58,7 +58,7 @@ pub fn init() !void {
     );
     errdefer font.deinit();
 
-    player_image = try seizer.image.Image(seizer.color.argbf32).fromMemory(gpa.allocator(), @embedFile("assets/wedge.png"));
+    player_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("assets/wedge.png"));
     errdefer player_image.free(gpa.allocator());
 
     between_frame_timer = try std.time.Timer.start();

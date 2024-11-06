@@ -5,7 +5,7 @@ var display: seizer.Display = undefined;
 var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
-var shield_image: seizer.image.Image(seizer.color.argbf32) = undefined;
+var shield_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
@@ -22,7 +22,7 @@ pub fn init() !void {
     );
     defer shield_image_tvg.deinit(gpa.allocator());
 
-    shield_image = try seizer.image.Image(seizer.color.argbf32).alloc(
+    shield_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).alloc(
         gpa.allocator(),
         .{ shield_image_tvg.width, shield_image_tvg.width },
     );

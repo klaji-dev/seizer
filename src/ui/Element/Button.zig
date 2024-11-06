@@ -10,21 +10,21 @@ clicked_style: Style,
 
 on_click: ?ui.Callable(fn (*@This()) void) = null,
 
-const RECT_COLOR_DEFAULT = seizer.color.argb8.init(@enumFromInt(0x30), @enumFromInt(0x30), @enumFromInt(0x30), 0xff).convertColorTo(f32).convertAlphaTo(f32);
-const RECT_COLOR_HOVERED = seizer.color.argb8.init(@enumFromInt(0x50), @enumFromInt(0x50), @enumFromInt(0x50), 0xff).convertColorTo(f32).convertAlphaTo(f32);
-const RECT_COLOR_CLICKED = seizer.color.argb8.init(@enumFromInt(0x70), @enumFromInt(0x70), @enumFromInt(0x70), 0xff).convertColorTo(f32).convertAlphaTo(f32);
+const RECT_COLOR_DEFAULT = seizer.color.fromSRGB(0x30, 0x30, 0x30, 0xff);
+const RECT_COLOR_HOVERED = seizer.color.fromSRGB(0x50, 0x50, 0x50, 0xff);
+const RECT_COLOR_CLICKED = seizer.color.fromSRGB(0x70, 0x70, 0x70, 0xff);
 
-const TEXT_COLOR_DEFAULT = seizer.color.argbf32.fromArray(.{ 1, 1, 1, 1 });
-const TEXT_COLOR_HOVERED = seizer.color.argbf32.fromArray(.{ 1, 1, 0.214, 1 });
-const TEXT_COLOR_CLICKED = seizer.color.argbf32.fromArray(.{ 1, 1, 0, 1 });
+const TEXT_COLOR_DEFAULT = seizer.color.argbf32_premultiplied.fromArray(.{ 1, 1, 1, 1 });
+const TEXT_COLOR_HOVERED = seizer.color.argbf32_premultiplied.fromArray(.{ 1, 1, 0.214, 1 });
+const TEXT_COLOR_CLICKED = seizer.color.argbf32_premultiplied.fromArray(.{ 1, 1, 0, 1 });
 
 pub const Style = struct {
     padding: seizer.geometry.Inset(f64),
     text_font: *const seizer.Canvas.Font,
     text_scale: f64,
-    text_color: seizer.color.argbf32,
+    text_color: seizer.color.argbf32_premultiplied,
     background_ninepatch: ?seizer.Canvas.NinePatch = null,
-    background_color: seizer.color.argbf32,
+    background_color: seizer.color.argbf32_premultiplied,
 };
 
 pub fn create(stage: *ui.Stage, text: []const u8) !*@This() {

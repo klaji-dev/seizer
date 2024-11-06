@@ -7,10 +7,35 @@
 //! - https://bottosson.github.io/posts/colorwrong/
 //! - https://mina86.com/2019/srgb-xyz-conversion/
 
-// Based on the Gen-i-cam Pixel Format Naming Convention
+/// Linear f32 RGB color premultiplied with an f32 alpha component.
+///
+/// Breaking down the jargon:
+/// - **linear**: calculating the halfway point of two `argb` colors is as simple as
+///   `(a + b) / 2`, as opposed to an sRGB encoded color, where using the same
+///   equation will give an invalid result (you end up computing
+///   `(a^(1/2.4) + b^(1/2.4)) / 2`).
+/// - **RGB**: The color is specified using three components: the amount of `red` light,
+///   the amount of `green` light, and the amount of `blue` light.
+/// - **premultiplied alpha**: Sometimes called "associated alpha". The color channels
+///   already have the alpha factored into them. You can think of this in terms of
+///   "this object emits this much light (`r`, `g`, and `b`), and blocks X% of the
+///   light behind it (`a`)". See `Alpha` for more details.
+pub const argbf32_premultiplied = argb(f32, .premultiplied, f32);
 
-pub const argb8 = argb(sRGB8, .premultiplied, u8);
-pub const argbf32 = argb(f32, .premultiplied, f32);
+/// Convert an sRGB encoded color into a linear color with f32 components.
+///
+/// Most of the time an RGB colors are sRGB encoded. For example, PNG and CSS
+/// colors are sRGB encoded.
+///
+/// **sRGB colors are not linear**! You **should not** do arithmetic on sRGB encoded
+/// values unless you **know** that is what you want!
+pub fn fromSRGB(r: u8, g: u8, b: u8, a: u8) argbf32_premultiplied {
+    return argb(sRGB8, .straight, u8)
+        .init(@enumFromInt(b), @enumFromInt(g), @enumFromInt(r), a)
+        .convertColorTo(f32)
+        .convertAlphaTo(f32)
+        .convertAlphaModelTo(.premultiplied);
+}
 
 /// An enum used to specify which alpha model a pixel format is using.
 pub const Alpha = enum {
@@ -57,21 +82,7 @@ pub const Alpha = enum {
     straight,
 };
 
-/// Linear RGB color premultiplied with an alpha component.
-///
-/// Breaking down the jargon:
-/// - **linear**: calculating the halfway point of two `argb` colors is as simple as
-///   `(a + b) / 2`, as opposed to an sRGB encoded color, where using the same
-///   equation will give an invalid result (you end up computing
-///   `(a^(1/2.4) + b^(1/2.4)) / 2`).
-/// - **RGB**: The color is specified using three components: the amount of `red` light,
-///   the amount of `green` light, and the amount of `blue` light.
-/// - **premultiplied alpha**: Sometimes called "associated alpha". The color channels
-///   already have the alpha factored into them. You can think of this in terms of
-///   "this object emits this much light (`r`, `g`, and `b`), and blocks X% of the
-///   light behind it (`a`)".
-///
-/// The component order (BGRA) was chosen to match Linux's DRM_FOURCC `argb8888` format.
+/// Component order (BGRA) was chosen to match Linux's DRM_FOURCC `argb8888` format.
 pub fn argb(ColorData: type, comptime alpha_model: Alpha, comptime AlphaData: type) type {
     const D_ZERO: ColorData = switch (@typeInfo(ColorData)) {
         .Int => 0,
@@ -465,111 +476,6 @@ test "convert linear f32 alpha to linear u8 alpha " {
         argb(f32, .straight, f32).init(1, 1, 1, 128.0 / 255.0).convertAlphaTo(u8),
     );
 }
-
-// test "argb(f32).compositeSrcOverVec" {
-//     var prng = std.Random.DefaultPrng.init(438626002704109799);
-
-//     const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
-
-//     var dst_array: [vector_len]argb(f32) = undefined;
-//     var src_array: [vector_len]argb(f32) = undefined;
-//     var result_array: [vector_len]argb(f32) = undefined;
-//     for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
-//         dst.* = argb(f32).fromRGBUnassociatedAlpha(
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//         );
-//         src.* = argb(f32).fromRGBUnassociatedAlpha(
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//         );
-//         res.* = dst.compositeSrcOver(src.*);
-//     }
-
-//     const result_vec: [vector_len]argb(f32) = argb(f32).compositeSrcOverVec(vector_len, dst_array, src_array);
-//     try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec);
-// }
-
-// test "argb(f32).compositeSrcOverVecPlanar" {
-//     var prng = std.Random.DefaultPrng.init(438626002704109799);
-
-//     const vector_len = std.simd.suggestVectorLength(f32) orelse 4;
-
-//     var dst_array: [vector_len]argb(f32) = undefined;
-//     var src_array: [vector_len]argb(f32) = undefined;
-//     var result_array: [vector_len]argb(f32) = undefined;
-//     for (&result_array, &dst_array, &src_array) |*res, *dst, *src| {
-//         dst.* = argb(f32).fromRGBUnassociatedAlpha(
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//         );
-//         src.* = argb(f32).fromRGBUnassociatedAlpha(
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//         );
-//         res.* = dst.compositeSrcOver(src.*);
-//     }
-
-//     var dst_b_array: [vector_len]f32 = undefined;
-//     var dst_g_array: [vector_len]f32 = undefined;
-//     var dst_r_array: [vector_len]f32 = undefined;
-//     var dst_a_array: [vector_len]f32 = undefined;
-//     for (&dst_b_array, &dst_g_array, &dst_r_array, &dst_a_array, dst_array) |*b, *g, *r, *a, px| {
-//         b.* = px.b;
-//         g.* = px.g;
-//         r.* = px.r;
-//         a.* = px.a;
-//     }
-//     const dst_vec: argb(f32).Vectorized(vector_len) = .{
-//         .b = dst_b_array,
-//         .g = dst_g_array,
-//         .r = dst_r_array,
-//         .a = dst_a_array,
-//     };
-
-//     var src_b_array: [vector_len]f32 = undefined;
-//     var src_g_array: [vector_len]f32 = undefined;
-//     var src_r_array: [vector_len]f32 = undefined;
-//     var src_a_array: [vector_len]f32 = undefined;
-//     for (&src_b_array, &src_g_array, &src_r_array, &src_a_array, src_array) |*b, *g, *r, *a, px| {
-//         b.* = px.b;
-//         g.* = px.g;
-//         r.* = px.r;
-//         a.* = px.a;
-//     }
-//     const src_vec: argb(f32).Vectorized(vector_len) = .{
-//         .b = src_b_array,
-//         .g = src_g_array,
-//         .r = src_r_array,
-//         .a = src_a_array,
-//     };
-
-//     const result_vec: argb(f32).Vectorized(vector_len) = argb(f32).compositeSrcOverVecPlanar(vector_len, dst_vec, src_vec);
-
-//     var result_vec_array: [vector_len]argb(f32) = undefined;
-//     const result_b_array: [vector_len]f32 = result_vec.b;
-//     const result_g_array: [vector_len]f32 = result_vec.g;
-//     const result_r_array: [vector_len]f32 = result_vec.r;
-//     const result_a_array: [vector_len]f32 = result_vec.a;
-//     for (&result_vec_array, result_b_array, result_g_array, result_r_array, result_a_array) |*px, b, g, r, a| {
-//         px.* = .{
-//             .b = b,
-//             .g = g,
-//             .r = r,
-//             .a = a,
-//         };
-//     }
-
-//     try std.testing.expectEqualSlices(argb(f32), &result_array, &result_vec_array);
-// }
 
 /// An sRGB encoded value stored in 8-bits
 pub const sRGB8 = enum(u8) {

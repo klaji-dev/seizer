@@ -169,6 +169,7 @@ pub fn build(b: *Builder) !void {
         .optimize = benchmark_optimize,
     });
 
+    // color benchmarks
     const bench_color_exe = b.addExecutable(.{
         .name = "bench_color",
         .root_source_file = b.path("./bench/color.zig"),
@@ -177,11 +178,14 @@ pub fn build(b: *Builder) !void {
     });
     bench_color_exe.root_module.addImport("seizer", module);
     bench_color_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    b.installArtifact(bench_color_exe);
+
     const run_bench_color_exe = b.addRunArtifact(bench_color_exe);
 
     const bench_color_step = b.step("bench-color", "Run color benchmarks");
     bench_color_step.dependOn(&run_bench_color_exe.step);
 
+    // image benchmarks
     const bench_image_exe = b.addExecutable(.{
         .name = "bench_image",
         .root_source_file = b.path("./bench/image.zig"),
@@ -190,6 +194,8 @@ pub fn build(b: *Builder) !void {
     });
     bench_image_exe.root_module.addImport("seizer", module);
     bench_image_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    b.installArtifact(bench_image_exe);
+
     const run_bench_image_exe = b.addRunArtifact(bench_image_exe);
     if (b.args) |args| {
         run_bench_image_exe.addArgs(args);

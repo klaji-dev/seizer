@@ -7,7 +7,7 @@ var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined
 var input_listener: seizer.Display.ToplevelSurface.OnInputListener = undefined;
 
 var font: seizer.Canvas.Font = undefined;
-var ui_image: seizer.image.Image(seizer.color.argbf32) = undefined;
+var ui_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
 var stage: *seizer.ui.Stage = undefined;
 
 pub fn init() !void {
@@ -25,7 +25,7 @@ pub fn init() !void {
     );
     errdefer font.deinit();
 
-    ui_image = try seizer.image.Image(seizer.color.argbf32).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
+    ui_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
     errdefer ui_image.free(gpa.allocator());
 
     stage = try seizer.ui.Stage.create(gpa.allocator(), .{
@@ -35,9 +35,9 @@ pub fn init() !void {
         },
         .text_font = &font,
         .text_scale = 1,
-        .text_color = seizer.color.argbf32.BLACK,
+        .text_color = seizer.color.argbf32_premultiplied.BLACK,
         .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
-        .background_color = seizer.color.argbf32.WHITE,
+        .background_color = seizer.color.argbf32_premultiplied.WHITE,
     });
     errdefer stage.destroy();
 
@@ -71,24 +71,24 @@ pub fn init() !void {
         .min = .{ 8, 7 },
         .max = .{ 8, 9 },
     };
-    hello_button.default_style.text_color = seizer.color.argbf32.BLACK;
-    hello_button.default_style.background_color = seizer.color.argbf32.WHITE;
+    hello_button.default_style.text_color = seizer.color.argbf32_premultiplied.BLACK;
+    hello_button.default_style.background_color = seizer.color.argbf32_premultiplied.WHITE;
     hello_button.default_style.background_ninepatch = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 120, 24 }, .{ 24, 24 }), seizer.geometry.Inset(u32).initXY(8, 8));
 
     hello_button.hovered_style.padding = .{
         .min = .{ 8, 8 },
         .max = .{ 8, 8 },
     };
-    hello_button.hovered_style.text_color = seizer.color.argbf32.BLACK;
-    hello_button.hovered_style.background_color = seizer.color.argbf32.WHITE;
+    hello_button.hovered_style.text_color = seizer.color.argbf32_premultiplied.BLACK;
+    hello_button.hovered_style.background_color = seizer.color.argbf32_premultiplied.WHITE;
     hello_button.hovered_style.background_ninepatch = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 96, 0 }, .{ 24, 24 }), seizer.geometry.Inset(u32).initXY(8, 8));
 
     hello_button.clicked_style.padding = .{
         .min = .{ 8, 9 },
         .max = .{ 8, 7 },
     };
-    hello_button.clicked_style.text_color = seizer.color.argbf32.BLACK;
-    hello_button.clicked_style.background_color = seizer.color.argbf32.WHITE;
+    hello_button.clicked_style.text_color = seizer.color.argbf32_premultiplied.BLACK;
+    hello_button.clicked_style.background_color = seizer.color.argbf32_premultiplied.WHITE;
     hello_button.clicked_style.background_ninepatch = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 120, 0 }, .{ 24, 24 }), seizer.geometry.Inset(u32).initXY(8, 8));
 
     try frame_flexbox.appendChild(hello_button.element());

@@ -16,7 +16,7 @@ new_configuration: Configuration,
 
 /// This framebuffer is used for compositing. The buffer that will be sent to the compositor
 /// will need to be have a linear layout and be `argb8888` encoded.
-framebuffer: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32),
+framebuffer: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied),
 swapchain: Swapchain,
 on_render_listener: ?*OnRenderListener,
 on_input_listener: ?*OnInputListener,
@@ -146,12 +146,12 @@ pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
     return .{ @floatFromInt(this.current_configuration.window_size[0]), @floatFromInt(this.current_configuration.window_size[1]) };
 }
 
-pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32) void {
+pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premultiplied) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
     this.framebuffer.clear(color);
 }
 
-pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32)) void {
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32_premultiplied)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const pos_i = [2]i32{
@@ -194,7 +194,7 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
     this.framebuffer.drawFillRect(a, b, options.color);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32), options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const start_pos = [2]u32{

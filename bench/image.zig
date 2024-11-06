@@ -1,17 +1,15 @@
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var prng: std.Random.DefaultPrng = undefined;
 
-var src_linear_argb8888: ImageArgb8888 = undefined;
 var src_linear_argbf32: ImageArgbF32 = undefined;
-var src_tiled_argbf32: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)) = undefined;
-var src_zordered_argbf32: seizer.image.ZOrdered(seizer.color.argb(f32)) = undefined;
-var src_planar_argbf32: seizer.image.Planar(seizer.color.argb(f32)) = undefined;
+var src_tiled_argbf32: seizer.image.Tiled(.{ 16, 16 }, argbf32_premultiplied) = undefined;
+var src_zordered_argbf32: seizer.image.ZOrdered(argbf32_premultiplied) = undefined;
+var src_planar_argbf32: seizer.image.Planar(argbf32_premultiplied) = undefined;
 
-var dst_linear_argb8888: ImageArgb8888 = undefined;
 var dst_linear_argbf32: ImageArgbF32 = undefined;
-var dst_tiled_argbf32: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)) = undefined;
-var dst_zordered_argbf32: seizer.image.ZOrdered(seizer.color.argb(f32)) = undefined;
-var dst_planar_argbf32: seizer.image.Planar(seizer.color.argb(f32)) = undefined;
+var dst_tiled_argbf32: seizer.image.Tiled(.{ 16, 16 }, argbf32_premultiplied) = undefined;
+var dst_zordered_argbf32: seizer.image.ZOrdered(argbf32_premultiplied) = undefined;
+var dst_planar_argbf32: seizer.image.Planar(argbf32_premultiplied) = undefined;
 
 var ops_pos: []const [2]u32 = &.{};
 
@@ -93,32 +91,28 @@ pub fn main() !void {
     ops_pos = ops_pos_buffer;
 
     // init src images
-    src_linear_argb8888 = try ImageArgb8888.alloc(gpa.allocator(), src_size);
-    defer src_linear_argb8888.free(gpa.allocator());
-
     src_linear_argbf32 = try ImageArgbF32.alloc(gpa.allocator(), src_size);
     defer src_linear_argbf32.free(gpa.allocator());
 
-    src_tiled_argbf32 = try seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(gpa.allocator(), src_size);
+    src_tiled_argbf32 = try seizer.image.Tiled(.{ 16, 16 }, argbf32_premultiplied).alloc(gpa.allocator(), src_size);
     defer src_tiled_argbf32.free(gpa.allocator());
 
-    src_zordered_argbf32 = try seizer.image.ZOrdered(seizer.color.argb(f32)).alloc(gpa.allocator(), src_size);
+    src_zordered_argbf32 = try seizer.image.ZOrdered(argbf32_premultiplied).alloc(gpa.allocator(), src_size);
     defer src_zordered_argbf32.free(gpa.allocator());
 
-    src_planar_argbf32 = try seizer.image.Planar(seizer.color.argb(f32)).alloc(gpa.allocator(), src_size);
+    src_planar_argbf32 = try seizer.image.Planar(argbf32_premultiplied).alloc(gpa.allocator(), src_size);
     defer src_planar_argbf32.free(gpa.allocator());
 
     for (0..src_size[1]) |y| {
         for (0..src_size[0]) |x| {
             const pos = [2]u32{ @intCast(x), @intCast(y) };
-            const pixel = seizer.color.argb(f32).fromRGBUnassociatedAlpha(
+            const pixel = seizer.color.argb(f32, .straight, f32).init(
                 prng.random().float(f32),
                 prng.random().float(f32),
                 prng.random().float(f32),
                 prng.random().float(f32),
-            );
+            ).convertAlphaModelTo(.premultiplied);
 
-            src_linear_argb8888.setPixel(pos, pixel.toArgb8888());
             src_linear_argbf32.setPixel(pos, pixel);
             src_tiled_argbf32.setPixel(pos, pixel);
             src_zordered_argbf32.setPixel(pos, pixel);
@@ -127,27 +121,22 @@ pub fn main() !void {
     }
 
     // init dst images
-    dst_linear_argb8888 = try ImageArgb8888.alloc(gpa.allocator(), dst_size);
-    defer dst_linear_argb8888.free(gpa.allocator());
-
     dst_linear_argbf32 = try ImageArgbF32.alloc(gpa.allocator(), dst_size);
     defer dst_linear_argbf32.free(gpa.allocator());
 
-    dst_tiled_argbf32 = try seizer.image.Tiled(.{ 16, 16 }, seizer.color.argb(f32)).alloc(gpa.allocator(), dst_size);
+    dst_tiled_argbf32 = try seizer.image.Tiled(.{ 16, 16 }, argbf32_premultiplied).alloc(gpa.allocator(), dst_size);
     defer dst_tiled_argbf32.free(gpa.allocator());
 
-    dst_zordered_argbf32 = try seizer.image.ZOrdered(seizer.color.argb(f32)).alloc(gpa.allocator(), dst_size);
+    dst_zordered_argbf32 = try seizer.image.ZOrdered(argbf32_premultiplied).alloc(gpa.allocator(), dst_size);
     defer dst_zordered_argbf32.free(gpa.allocator());
 
-    dst_planar_argbf32 = try seizer.image.Planar(seizer.color.argb(f32)).alloc(gpa.allocator(), dst_size);
+    dst_planar_argbf32 = try seizer.image.Planar(argbf32_premultiplied).alloc(gpa.allocator(), dst_size);
     defer dst_planar_argbf32.free(gpa.allocator());
 
     // create benchmarks
     var bench = zbench.Benchmark.init(gpa.allocator(), .{});
     defer bench.deinit();
 
-    try bench.add("copy Linear(argb8888)", linearArgb8888Copy, .{});
-    try bench.add("composite Linear(argb8888)", linearArgb8888Composite, .{});
     try bench.add("composite Linear(argb(f32))", linearArgbF32Composite, .{});
     try bench.add("composite Tiled(.{16,16},argb(f32))", tiled16x16ArgbF32Composite, .{});
     try bench.add("compositeLinear Tiled(.{16,16},argb(f32))", tiled16x16ArgbF32CompositeLinear, .{});
@@ -159,24 +148,8 @@ pub fn main() !void {
     try bench.run(stdout);
 }
 
-fn linearArgb8888Copy(_: std.mem.Allocator) void {
-    dst_linear_argb8888.clear(seizer.color.argb8888.BLACK);
-    for (ops_pos) |pos| {
-        dst_linear_argb8888.slice(pos, src_linear_argb8888.size).copy(src_linear_argb8888);
-    }
-    std.mem.doNotOptimizeAway(dst_linear_argb8888.pixels);
-}
-
-fn linearArgb8888Composite(_: std.mem.Allocator) void {
-    dst_linear_argb8888.clear(seizer.color.argb8888.BLACK);
-    for (ops_pos) |pos| {
-        dst_linear_argb8888.slice(pos, src_linear_argb8888.size).composite(src_linear_argb8888);
-    }
-    std.mem.doNotOptimizeAway(dst_linear_argb8888.pixels);
-}
-
 fn linearArgbF32Composite(_: std.mem.Allocator) void {
-    dst_linear_argbf32.clear(seizer.color.argb(f32).BLACK);
+    dst_linear_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
         dst_linear_argbf32.slice(pos, src_linear_argbf32.size).composite(src_linear_argbf32);
     }
@@ -184,7 +157,7 @@ fn linearArgbF32Composite(_: std.mem.Allocator) void {
 }
 
 fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
-    dst_tiled_argbf32.clear(seizer.color.argb(f32).BLACK);
+    dst_tiled_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
         dst_tiled_argbf32.slice(pos, src_linear_argbf32.size).compositeLinear(src_linear_argbf32);
     }
@@ -192,7 +165,7 @@ fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
 }
 
 fn tiled16x16ArgbF32Composite(_: std.mem.Allocator) void {
-    dst_tiled_argbf32.clear(seizer.color.argb(f32).BLACK);
+    dst_tiled_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
         dst_tiled_argbf32.slice(pos, src_tiled_argbf32.size_px).composite(src_tiled_argbf32);
     }
@@ -200,7 +173,7 @@ fn tiled16x16ArgbF32Composite(_: std.mem.Allocator) void {
 }
 
 fn tiled16x16ArgbF32CompositeZOrder(_: std.mem.Allocator) void {
-    dst_tiled_argbf32.clear(seizer.color.argb(f32).BLACK);
+    dst_tiled_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
         dst_tiled_argbf32.slice(pos, src_zordered_argbf32.size).compositeZOrder(src_zordered_argbf32);
     }
@@ -208,7 +181,7 @@ fn tiled16x16ArgbF32CompositeZOrder(_: std.mem.Allocator) void {
 }
 
 fn zorderedArgbF32Composite(_: std.mem.Allocator) void {
-    dst_zordered_argbf32.clear(seizer.color.argb(f32).BLACK);
+    dst_zordered_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |slice_pos| {
         const dst_slice = dst_zordered_argbf32.slice(slice_pos, src_zordered_argbf32.size);
         for (0..src_zordered_argbf32.size[1]) |y| {
@@ -227,15 +200,17 @@ fn zorderedArgbF32Composite(_: std.mem.Allocator) void {
 }
 
 fn planarArgbF32Composite(_: std.mem.Allocator) void {
-    src_planar_argbf32.clear(seizer.color.argb(f32).BLACK);
+    src_planar_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |slice_pos| {
         dst_planar_argbf32.slice(slice_pos, src_planar_argbf32.size).composite(src_planar_argbf32);
     }
     std.mem.doNotOptimizeAway(dst_planar_argbf32.pixels);
 }
 
-const ImageArgb8888 = seizer.image.Image(seizer.color.argb8888);
-const ImageArgbF32 = seizer.image.Image(seizer.color.argb(f32));
+const argb8 = seizer.color.argb(seizer.color.sRGB8, .premultiplied, u8);
+const argbf32_premultiplied = seizer.color.argbf32_premultiplied;
+const ImageArgb8 = seizer.image.Image(seizer.color.argb(seizer.color.sRGB8, .premultiplied, u8));
+const ImageArgbF32 = seizer.image.Image(argbf32_premultiplied);
 
 const seizer = @import("seizer");
 const std = @import("std");
