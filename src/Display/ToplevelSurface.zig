@@ -18,11 +18,18 @@ new_configuration: Configuration,
 /// will need to be have a linear layout and be `argb8888` encoded.
 framebuffer: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied),
 swapchain: Swapchain,
+close_listener: ?*CloseListener,
 on_render_listener: ?*OnRenderListener,
 on_input_listener: ?*OnInputListener,
 
 pub const InitOptions = struct {
     size: [2]u32 = .{ 640, 480 },
+};
+
+pub const CloseListener = struct {
+    callback: CallbackFn,
+
+    pub const CallbackFn = *const fn (*CloseListener, *ToplevelSurface) anyerror!void;
 };
 
 pub const OnRenderListener = struct {
@@ -40,6 +47,8 @@ pub const OnInputListener = struct {
 };
 
 pub fn deinit(this: *@This()) void {
+    this.hide();
+
     // TODO: Object.asProxy
     const wl_surface: shimizu.Proxy(wayland.wl_surface) = .{ .connection = &this.display.connection, .id = this.wl_surface };
     const xdg_surface: shimizu.Proxy(xdg_shell.xdg_surface) = .{ .connection = &this.display.connection, .id = this.xdg_surface };
@@ -66,6 +75,13 @@ pub fn deinit(this: *@This()) void {
     // }
     this.framebuffer.free(this.display.allocator);
     this.swapchain.deinit();
+}
+
+pub fn setOnClose(this: *@This(), close_listener: *CloseListener, callback: CloseListener.CallbackFn) void {
+    close_listener.* = .{
+        .callback = callback,
+    };
+    this.close_listener = close_listener;
 }
 
 pub fn setOnRender(this: *@This(), on_render_listener: *OnRenderListener, callback: OnRenderListener.CallbackFn, userdata: ?*anyopaque) void {
@@ -128,6 +144,28 @@ pub fn present(this: *@This()) !void {
         .height = @intCast(buffer.size[1]),
     });
     try this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .commit, .{});
+
+    // Make sure this surface is in the list of active surfaces
+
+    try this.display.surfaces.put(this.display.allocator, this.wl_surface, this);
+}
+
+pub fn hide(this: *@This()) void {
+    this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .attach, .{
+        .x = 0,
+        .y = 0,
+        // shimizu: TODO: make properly nullable?
+        .buffer = @enumFromInt(0),
+    }) catch {};
+    this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .damage_buffer, .{
+        .x = 0,
+        .y = 0,
+        .width = std.math.maxInt(i32),
+        .height = std.math.maxInt(i32),
+    }) catch {};
+    this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .commit, .{}) catch {};
+
+    _ = this.display.surfaces.remove(this.wl_surface);
 }
 
 // Canvas implementation
@@ -292,15 +330,17 @@ pub fn onXdgToplevelEvent(listener: *shimizu.Listener, xdg_toplevel: shimizu.Pro
     const this: *@This() = @fieldParentPtr("xdg_toplevel_listener", listener);
     _ = xdg_toplevel;
     switch (event) {
-        .close => _ = this.display.surfaces.remove(this.wl_surface),
-        // if (this.on_event) |on_event| {
-        //     on_event(@ptrCast(this), .should_close) catch |err| {
-        //         std.debug.print("error returned from window event: {}\n", .{err});
-        //         if (@errorReturnTrace()) |err_ret_trace| {
-        //             std.debug.dumpStackTrace(err_ret_trace.*);
-        //         }
-        //     };
-        // },
+        .close => if (this.close_listener) |close_listener| {
+            close_listener.callback(close_listener, this) catch |err| {
+                std.debug.print("{}\n", .{err});
+                if (@errorReturnTrace()) |error_trace_ptr| {
+                    std.debug.dumpStackTrace(error_trace_ptr.*);
+                }
+            };
+        } else {
+            // default behavior when no close listener is set
+            this.hide();
+        },
         .configure => |cfg| {
             if (cfg.width > 0 and cfg.height > 0) {
                 this.new_configuration.window_size[0] = @intCast(cfg.width);

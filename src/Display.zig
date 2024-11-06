@@ -128,10 +128,6 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
         .frame_callback = null,
         .frame_callback_listener = undefined,
 
-        // .on_event = options.on_event,
-        // .on_render = options.on_render,
-        // .on_destroy = options.on_destroy,
-
         .current_configuration = .{
             .window_size = .{ 0, 0 },
             .decoration_mode = .client_side,
@@ -148,6 +144,8 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
             .end_px = .{ 0, 0 },
         },
         .swapchain = .{},
+
+        .close_listener = null,
         .on_render_listener = null,
         .on_input_listener = null,
     };
