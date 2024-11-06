@@ -231,17 +231,17 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [
 
 pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
-    const start_i = [2]i32{
-        @intFromFloat(@floor(start[0])),
-        @intFromFloat(@floor(start[1])),
+    const start_f = [2]f32{
+        @floatCast(start[0]),
+        @floatCast(start[1]),
     };
-    const end_i = [2]i32{
-        @intFromFloat(@floor(end[0])),
-        @intFromFloat(@floor(end[1])),
+    const end_f = [2]f32{
+        @floatCast(end[0]),
+        @floatCast(end[1]),
     };
 
     const end_color = options.end_color orelse options.color;
-    this.framebuffer.drawLine(start_i, end_i, options.color, end_color);
+    this.framebuffer.drawLine(start_f, end_f, @floatCast(options.width / 2), .{ options.color, end_color });
 }
 
 // shimizu callback functions

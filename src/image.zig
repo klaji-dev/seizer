@@ -118,53 +118,43 @@ pub fn Image(Pixel: type) type {
             }
         }
 
-        pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: Pixel, end_color: Pixel) void {
-            const delta = [2]i32{
-                @intCast(@abs(b[0] - a[0])),
-                -@as(i32, @intCast(@abs(b[1] - a[1]))),
-            };
-            const sign = [2]i32{
-                std.math.sign(b[0] - a[0]),
-                std.math.sign(b[1] - a[1]),
-            };
-            const af: [2]f32 = .{ @floatFromInt(a[0]), @floatFromInt(a[1]) };
-            const bf: [2]f32 = .{ @floatFromInt(b[0]), @floatFromInt(b[1]) };
-            const line_length: f32 = std.math.sqrt(
-                (bf[0] - af[0]) * (bf[0] - af[0]) +
-                    (bf[1] - af[1]) * (bf[1] - af[1]),
-            );
-            std.debug.assert(line_length > bf[0] - af[0]);
-            std.debug.assert(line_length > bf[1] - af[1]);
-            const t_delta = [2]f32{
-                ((bf[0] - af[0]) / line_length) / line_length,
-                ((bf[1] - af[1]) / line_length) / line_length,
-            };
-            std.debug.assert(@abs(t_delta[0]) < 0.5);
-            std.debug.assert(@abs(t_delta[1]) < 0.5);
-            var t: f32 = 0;
+        /// Returns the signed distance to a line segment
+        fn capsuleSDF(p: [2]f32, a: [2]f32, b: [2]f32, r: f32) f32 {
+            const pax = p[0] - a[0];
+            const pay = p[1] - a[1];
+            const bax = b[0] - a[0];
+            const bay = b[1] - a[1];
+            const h = std.math.clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
+            const dx = pax - bax * h;
+            const dy = pay - bay * h;
+            return @sqrt(dx * dx + dy * dy) - r;
+        }
 
-            var err = delta[0] + delta[1];
-            var pos = a;
-            while (true) {
-                const is_in_bounds = [2]bool{
-                    pos[0] >= 0 and pos[0] < this.size_px[0],
-                    pos[1] >= 0 and pos[1] < this.size_px[1],
-                };
-                if (is_in_bounds[0] and is_in_bounds[1]) {
-                    this.setPixel(.{ @intCast(pos[0]), @intCast(pos[1]) }, color.blend(end_color, t));
-                }
+        fn lineProgress(p: [2]f32, a: [2]f32, b: [2]f32) f32 {
+            const pax = p[0] - a[0];
+            const pay = p[1] - a[1];
+            const bax = b[0] - a[0];
+            const bay = b[1] - a[1];
+            const h = std.math.clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
+            return h;
+        }
 
-                if (pos[0] == b[0] and pos[1] == b[1]) break;
-                const err2 = 2 * err;
-                if (err2 >= delta[1]) {
-                    err += delta[1];
-                    pos[0] += sign[0];
-                    t += t_delta[0];
-                }
-                if (err2 <= delta[0]) {
-                    err += delta[0];
-                    pos[1] += sign[1];
-                    t += t_delta[1];
+        pub fn drawLine(this: @This(), a: [2]f32, b: [2]f32, r: f32, colors: [2]Pixel) void {
+            const px0: usize = @intFromFloat(@floor(@min(a[0], b[0]) - r));
+            const px1: usize = @intFromFloat(@ceil(@max(a[0], b[0]) + r));
+            const py0: usize = @intFromFloat(@floor(@min(a[1], b[1]) - r));
+            const py1: usize = @intFromFloat(@ceil(@max(a[1], b[1]) + r));
+            std.debug.assert(px1 - px0 > 0 and py1 - py0 > 0);
+            std.debug.assert(px1 != px0 and py1 != py0);
+            for (py0..py1) |y| {
+                for (px0..px1) |x| {
+                    const h = lineProgress(.{ @floatFromInt(x), @floatFromInt(y) }, a, b);
+                    const color = colors[0].blend(colors[1], h);
+                    const bg = this.getPixel(.{ @intCast(x), @intCast(y) });
+                    const capsule = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
+                    const dist = std.math.clamp(0.5 - capsule, 0, 1);
+                    const blended = bg.blend(color, dist);
+                    this.setPixel(.{ @intCast(x), @intCast(y) }, blended);
                 }
             }
         }
@@ -868,53 +858,43 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
-        pub fn drawLine(this: @This(), a: [2]i32, b: [2]i32, color: Pixel, end_color: Pixel) void {
-            const delta = [2]i32{
-                @intCast(@abs(b[0] - a[0])),
-                -@as(i32, @intCast(@abs(b[1] - a[1]))),
-            };
-            const sign = [2]i32{
-                std.math.sign(b[0] - a[0]),
-                std.math.sign(b[1] - a[1]),
-            };
-            const af: [2]f32 = .{ @floatFromInt(a[0]), @floatFromInt(a[1]) };
-            const bf: [2]f32 = .{ @floatFromInt(b[0]), @floatFromInt(b[1]) };
-            const line_length: f32 = std.math.sqrt(
-                (bf[0] - af[0]) * (bf[0] - af[0]) +
-                    (bf[1] - af[1]) * (bf[1] - af[1]),
-            );
-            std.debug.assert(line_length > bf[0] - af[0]);
-            std.debug.assert(line_length > bf[1] - af[1]);
-            const t_delta = [2]f32{
-                ((bf[0] - af[0]) / line_length) / line_length,
-                ((bf[1] - af[1]) / line_length) / line_length,
-            };
-            std.debug.assert(@abs(t_delta[0]) < 0.5);
-            std.debug.assert(@abs(t_delta[1]) < 0.5);
-            var t: f32 = 0;
+        /// Returns the signed distance to a line segment
+        fn capsuleSDF(p: [2]f32, a: [2]f32, b: [2]f32, r: f32) f32 {
+            const pax = p[0] - a[0];
+            const pay = p[1] - a[1];
+            const bax = b[0] - a[0];
+            const bay = b[1] - a[1];
+            const h = std.math.clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
+            const dx = pax - bax * h;
+            const dy = pay - bay * h;
+            return @sqrt(dx * dx + dy * dy) - r;
+        }
 
-            var err = delta[0] + delta[1];
-            var pos = a;
-            while (true) {
-                const is_in_bounds = [2]bool{
-                    pos[0] >= 0 and pos[0] < this.size_px[0],
-                    pos[1] >= 0 and pos[1] < this.size_px[1],
-                };
-                if (is_in_bounds[0] and is_in_bounds[1]) {
-                    this.setPixel(.{ @intCast(pos[0]), @intCast(pos[1]) }, color.blend(end_color, t));
-                }
+        fn lineProgress(p: [2]f32, a: [2]f32, b: [2]f32) f32 {
+            const pax = p[0] - a[0];
+            const pay = p[1] - a[1];
+            const bax = b[0] - a[0];
+            const bay = b[1] - a[1];
+            const h = std.math.clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
+            return h;
+        }
 
-                if (pos[0] == b[0] and pos[1] == b[1]) break;
-                const err2 = 2 * err;
-                if (err2 >= delta[1]) {
-                    err += delta[1];
-                    pos[0] += sign[0];
-                    t += t_delta[0];
-                }
-                if (err2 <= delta[0]) {
-                    err += delta[0];
-                    pos[1] += sign[1];
-                    t += t_delta[1];
+        pub fn drawLine(this: @This(), a: [2]f32, b: [2]f32, r: f32, colors: [2]Pixel) void {
+            const px0: usize = @intFromFloat(@floor(@min(a[0], b[0]) - r));
+            const px1: usize = @intFromFloat(@ceil(@max(a[0], b[0]) + r));
+            const py0: usize = @intFromFloat(@floor(@min(a[1], b[1]) - r));
+            const py1: usize = @intFromFloat(@ceil(@max(a[1], b[1]) + r));
+            std.debug.assert(px1 - px0 > 0 and py1 - py0 > 0);
+            std.debug.assert(px1 != px0 and py1 != py0);
+            for (py0..py1) |y| {
+                for (px0..px1) |x| {
+                    const h = lineProgress(.{ @floatFromInt(x), @floatFromInt(y) }, a, b);
+                    const color = colors[0].blend(colors[1], h);
+                    const bg = this.getPixel(.{ @intCast(x), @intCast(y) });
+                    const capsule = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
+                    const dist = std.math.clamp(0.5 - capsule, 0, 1);
+                    const blended = bg.blend(color, dist);
+                    this.setPixel(.{ @intCast(x), @intCast(y) }, blended);
                 }
             }
         }
