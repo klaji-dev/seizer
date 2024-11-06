@@ -579,17 +579,22 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             const rmax = @max(r[0], r[1]);
 
             const sizef: [2]f32 = .{
-                @floatFromInt(this.size_px[0]),
-                @floatFromInt(this.size_px[1]),
+                @floatFromInt(this.end_px[0] - this.start_px[0]),
+                @floatFromInt(this.end_px[1] - this.start_px[1]),
             };
+            const area = seizer.geometry.AABB(u32).init(this.start_px, this.end_px);
+            const area_line = seizer.geometry.AABB(u32).init(.{
+                @intFromFloat(std.math.clamp(@floor(@min(a[0], b[0]) - rmax), 0, sizef[0])),
+                @intFromFloat(std.math.clamp(@floor(@min(a[1], b[1]) - rmax), 0, sizef[1])),
+            }, .{
+                @intFromFloat(std.math.clamp(@ceil(@max(a[0], b[0]) + rmax), 0, sizef[0])),
+                @intFromFloat(std.math.clamp(@ceil(@max(a[1], b[1]) + rmax), 0, sizef[1])),
+            });
 
-            const px0: usize = @intFromFloat(std.math.clamp(@floor(@min(a[0], b[0]) - rmax), 0, sizef[0]));
-            const px1: usize = @intFromFloat(std.math.clamp(@ceil(@max(a[0], b[0]) + rmax), 0, sizef[0]));
-            const py0: usize = @intFromFloat(std.math.clamp(@floor(@min(a[1], b[1]) - rmax), 0, sizef[1]));
-            const py1: usize = @intFromFloat(std.math.clamp(@ceil(@max(a[1], b[1]) + rmax), 0, sizef[1]));
+            const overlap = area_line.clamp(area);
 
-            for (py0..py1) |y| {
-                for (px0..px1) |x| {
+            for (overlap.min[1]..overlap.max[1]) |y| {
+                for (overlap.min[0]..overlap.max[0]) |x| {
                     const capsule, const h = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
                     const color = colors[0].blend(colors[1], h);
                     const bg = this.getPixel(.{ @intCast(x), @intCast(y) });
@@ -624,7 +629,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
 
         pub fn tilePosFromOffset(this: @This(), offset: [2]u32) TilePos {
             std.debug.assert(offset[0] >= 0 and offset[1] >= 0);
-            std.debug.assert(offset[0] <= this.end_px[0] - this.start_px[0] and offset[1] <= this.end_px[1] - this.start_px[1]);
+            std.debug.assert(offset[0] <= this.end_px[0] - this.start_px[0]);
+            std.debug.assert(offset[1] <= this.end_px[1] - this.start_px[1]);
             const pos = [2]u32{
                 @intCast(this.start_px[0] + offset[0]),
                 @intCast(this.start_px[1] + offset[1]),
