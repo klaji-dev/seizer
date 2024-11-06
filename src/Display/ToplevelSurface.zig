@@ -65,6 +65,10 @@ pub fn deinit(this: *@This()) void {
     xdg_surface.sendRequest(.destroy, .{}) catch {};
     wl_surface.sendRequest(.destroy, .{}) catch {};
 
+    this.command.deinit(this.display.allocator);
+    this.command_hash.deinit(this.display.allocator);
+    this.command_hash_prev.deinit(this.display.allocator);
+
     // TODO: remove event listeners from surfaces
     // window.xdg_toplevel.userdata = null;
     // window.xdg_surface.userdata = null;
@@ -223,6 +227,7 @@ const Command = struct {
             color: seizer.color.argbf32_premultiplied,
         },
         rect_clear: struct {
+            area: seizer.geometry.AABB(u32),
             color: seizer.color.argbf32_premultiplied,
         },
 
@@ -239,10 +244,11 @@ pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
 
 pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premultiplied) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    const area = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = this.current_configuration.window_size };
     this.command.appendAssumeCapacity(.{
         .tag = .rect_clear,
-        .renderRect = .{ .min = .{ 0, 0 }, .max = this.current_configuration.window_size },
-        .renderData = .{ .rect_clear = .{ .color = color } },
+        .renderRect = area,
+        .renderData = .{ .rect_clear = .{ .area = area, .color = color } },
     });
 }
 
@@ -559,7 +565,7 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
         },
         .rect_clear => {
             const d = data.rect_clear;
-            fb.clear(d.color);
+            fb.clear(d.area, d.color);
         },
         .rect_stroke => {
             // TODO

@@ -304,7 +304,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                 this.size_px = new_size_px;
                 this.start_px = .{ 0, 0 };
                 this.end_px = new_size_px;
-                this.clear(Pixel.BLACK);
+                this.clear(.{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
                 return;
             }
 
@@ -318,7 +318,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             this.size_px = new_size_px;
             this.start_px = .{ 0, 0 };
             this.end_px = new_size_px;
-            this.clear(Pixel.BLACK);
+            this.clear(.{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
         }
 
         pub fn free(this: @This(), allocator: std.mem.Allocator) void {
@@ -327,12 +327,39 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             allocator.free(this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]);
         }
 
-        pub fn clear(this: @This(), pixel: Pixel) void {
-            std.debug.assert(this.size_px[0] == this.end_px[0] and this.size_px[1] == this.end_px[1]);
-            const size_in_tiles = sizeInTiles(this.size_px);
-            for (this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]) |*tile| {
-                for (tile) |*row| {
-                    @memset(row, pixel);
+        pub fn clear(this: @This(), area: seizer.geometry.AABB(u32), pixel: Pixel) void {
+            const slice_area = seizer.geometry.AABB(u32).init(this.start_px, .{ this.end_px[0] - 1, this.end_px[1] - 1 });
+            if (!area.overlaps(slice_area)) return;
+            const rect = area.clamp(slice_area);
+
+            const min_tile_pos = this.tilePosFromOffset(rect.min);
+            const max_tile_pos = this.tilePosFromOffset(rect.max);
+
+            const size_in_tiles = sizeInTiles(rect.size());
+            for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
+                for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0]) |tile_x| {
+                    const tile_index = tile_y * size_in_tiles[0] + tile_x;
+                    const tile = &this.tiles[tile_index];
+
+                    const tile_pos_in_px = [2]u32{
+                        @intCast(tile_x * tile_size[0]),
+                        @intCast(tile_y * tile_size[1]),
+                    };
+
+                    const min_in_tile = [2]u32{
+                        this.start_px[0] -| tile_pos_in_px[0],
+                        this.start_px[1] -| tile_pos_in_px[1],
+                    };
+                    const max_in_tile = [2]u32{
+                        @min(tile_size[0], (this.end_px[0] -| tile_pos_in_px[0])),
+                        @min(tile_size[1], (this.end_px[1] -| tile_pos_in_px[1])),
+                    };
+
+                    for (min_in_tile[1]..max_in_tile[1]) |y| {
+                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                            tile[y][x] = pixel;
+                        }
+                    }
                 }
             }
         }
