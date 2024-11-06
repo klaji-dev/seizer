@@ -75,11 +75,26 @@ pub fn AABB(comptime T: type) type {
         min: [2]T,
         max: [2]T,
 
+        pub fn init(min: [2]T, max: [2]T) @This() {
+            return .{
+                .min = min,
+                .max = max,
+            };
+        }
+
         pub fn contains(this: @This(), point: [2]T) bool {
             return point[0] >= this.min[0] and
                 point[1] >= this.min[1] and
                 point[0] <= this.max[0] and
                 point[1] <= this.max[1];
+        }
+
+        pub fn overlaps(this: @This(), other: @This()) bool {
+            const each_axis = .{
+                this.min[0] <= other.max[0] and this.max[0] >= other.min[0],
+                this.min[1] <= other.max[1] and this.max[1] >= other.min[1],
+            };
+            return each_axis[0] and each_axis[1];
         }
 
         pub fn topLeft(this: @This()) [2]T {
