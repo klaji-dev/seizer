@@ -58,6 +58,13 @@ pub fn Rect(comptime T: type) type {
                 this.size[0] == other.size[0] and
                 this.size[1] == other.size[1];
         }
+
+        pub fn toAABB(this: @This()) AABB(T) {
+            return AABB(T){
+                .min = this.topLeft(),
+                .max = this.bottomRight(),
+            };
+        }
     };
 }
 
@@ -81,6 +88,13 @@ pub fn AABB(comptime T: type) type {
 
         pub fn bottomRight(this: @This()) [2]T {
             return this.max;
+        }
+
+        pub fn size(this: @This()) [2]T {
+            return [2]T{
+                this.max[0] - this.min[0],
+                this.max[1] - this.min[1],
+            };
         }
     };
 }
