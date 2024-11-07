@@ -1,5 +1,7 @@
 pub const Buffer = @import("./Display/Buffer.zig");
 pub const ToplevelSurface = @import("./Display/ToplevelSurface.zig");
+pub const Surface = @import("./Display/Surface.zig");
+pub const Swapchain = @import("Display/Swapchain.zig");
 
 allocator: std.mem.Allocator,
 connection: shimizu.Connection,
@@ -13,7 +15,7 @@ xdg_wm_base_listener: shimizu.Listener,
 
 seat: ?Seat,
 
-surfaces: std.AutoHashMapUnmanaged(shimizu.Object.WithInterface(wayland.wl_surface), *ToplevelSurface),
+toplevel: std.AutoHashMapUnmanaged(shimizu.Object.WithInterface(wayland.wl_surface), *ToplevelSurface),
 
 pub fn init(this: *@This(), allocator: std.mem.Allocator, loop: *xev.Loop) !void {
     this.* = .{
@@ -28,7 +30,7 @@ pub fn init(this: *@This(), allocator: std.mem.Allocator, loop: *xev.Loop) !void
         .xdg_wm_base_listener = undefined,
         .seat = null,
 
-        .surfaces = .{},
+        .toplevel = .{},
     };
 
     // open connection to wayland server
@@ -84,12 +86,12 @@ pub fn deinit(this: *@This()) void {
     if (this.seat) |*seat| {
         seat.deinit();
     }
-    this.surfaces.deinit(this.allocator);
+    this.toplevel.deinit(this.allocator);
     this.connection.close();
 }
 
 pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, options: ToplevelSurface.InitOptions) !void {
-    try this.surfaces.ensureUnusedCapacity(this.allocator, 1);
+    try this.toplevel.ensureUnusedCapacity(this.allocator, 1);
 
     const wl_surface = this.connection.sendRequest(wayland.wl_compositor, this.globals.wl_compositor.?, .create_surface, .{}) catch return error.ConnectionLost;
     const xdg_surface = this.connection.sendRequest(xdg_shell.xdg_wm_base, this.globals.xdg_wm_base.?, .get_xdg_surface, .{ .surface = wl_surface.id }) catch return error.ConnectionLost;
@@ -172,7 +174,24 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
     // if (options.app_name) |app_name| {
     //     xdg_toplevel.sendRequest(.set_app_id, .{ .app_id = app_name }) catch return error.ConnectionLost;
     // }
-    this.surfaces.putAssumeCapacity(wl_surface.id, toplevel_surface);
+    this.toplevel.putAssumeCapacity(wl_surface.id, toplevel_surface);
+}
+
+pub fn initSurface(this: *@This(), surface: *Surface, options: Surface.InitOptions) !void {
+    const wl_surface = this.connection.sendRequest(wayland.wl_compositor, this.globals.wl_compositor.?, .create_surface, .{}) catch return error.ConnectionLost;
+    wl_surface.sendRequest(.commit, .{}) catch return error.ConnectionLost;
+
+    const fb = try seizer.image.Linear(seizer.color.argbf32_premultiplied).alloc(this.allocator, options.size);
+
+    surface.* = .{
+        .display = this,
+        .wl_surface = wl_surface.id,
+        .swapchain = .{},
+        .framebuffer = fb,
+        .on_render_listener = null,
+        .size = options.size,
+    };
+    surface.swapchain.size = .{ 0, 0 };
 }
 
 const Globals = struct {
@@ -237,7 +256,7 @@ fn onConnectionRecvMessage(userdata: ?*anyopaque, loop: *xev.Loop, completion: *
             log.warn("error processing messages from wayland: {}", .{err});
         };
         this.connection_recv_completion.op.recvmsg.msghdr = this.connection.getRecvMsgHdr();
-        return if (this.surfaces.count() > 0) .rearm else .disarm;
+        return if (this.toplevel.count() > 0) .rearm else .disarm;
     } else |err| {
         log.err("error receiving messages from wayland compositor: {}", .{err});
         return .disarm;
@@ -253,12 +272,13 @@ const Seat = struct {
 
     pointer_pos: [2]f64 = .{ 0, 0 },
     scroll_vector: [2]f64 = .{ 0, 0 },
-    cursor_wl_surface: ?shimizu.Object.WithInterface(wayland.wl_surface) = null,
+    cursor_wl_surface: ?*Surface = null,
     wp_viewport: ?shimizu.Object.WithInterface(viewporter.wp_viewport) = null,
 
     pointer_focus: ?shimizu.Object.WithInterface(wayland.wl_surface) = null,
     pointer_listener: shimizu.Listener = undefined,
     pointer_serial: u32 = 0,
+    cursor_hotspot: [2]i32 = .{ 0, 0 },
     cursor_fractional_scale: ?shimizu.Object.WithInterface(fractional_scale_v1.wp_fractional_scale_v1) = null,
     cursor_fractional_scale_listener: shimizu.Listener = undefined,
     pointer_scale: u32 = 120,
@@ -382,7 +402,7 @@ fn onKeyboardCallback(listener: *shimizu.Listener, wl_keyboard: shimizu.Proxy(wa
             const xkb_modifiers = seat.keymap_state.getModifiers();
 
             const pointer_focus_id = seat.pointer_focus orelse return;
-            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const pointer_focus = this.toplevel.get(pointer_focus_id) orelse return;
             const input_listener = pointer_focus.on_input_listener orelse return;
 
             input_listener.callback(input_listener, pointer_focus, .{ .key = .{
@@ -435,7 +455,9 @@ fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayl
         .enter => |enter| {
             seat.pointer_focus = enter.surface;
             seat.pointer_serial = enter.serial;
-            updateCursorImage(seat) catch {};
+            this.updateCursorImage(seat) catch |e| {
+                log.warn("Unable to update cursor, {!}", .{e});
+            };
         },
         .leave => |leave| {
             if (seat.pointer_focus == leave.surface) {
@@ -444,7 +466,7 @@ fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayl
         },
         .motion => |motion| {
             const pointer_focus_id = seat.pointer_focus orelse return;
-            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const pointer_focus = this.toplevel.get(pointer_focus_id) orelse return;
             const input_listener = pointer_focus.on_input_listener orelse return;
 
             seat.pointer_pos = [2]f64{ motion.surface_x.toFloat(f64), motion.surface_y.toFloat(f64) };
@@ -460,7 +482,7 @@ fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayl
         },
         .button => |button| {
             const pointer_focus_id = seat.pointer_focus orelse return;
-            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const pointer_focus = this.toplevel.get(pointer_focus_id) orelse return;
             const input_listener = pointer_focus.on_input_listener orelse return;
 
             input_listener.callback(input_listener, pointer_focus, .{ .click = .{
@@ -482,7 +504,7 @@ fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayl
 
             defer seat.scroll_vector = .{ 0, 0 };
             const pointer_focus_id = seat.pointer_focus orelse return;
-            const pointer_focus = this.surfaces.get(pointer_focus_id) orelse return;
+            const pointer_focus = this.toplevel.get(pointer_focus_id) orelse return;
             const input_listener = pointer_focus.on_input_listener orelse return;
 
             input_listener.callback(input_listener, pointer_focus, .{ .scroll = .{
@@ -509,75 +531,22 @@ fn onCursorFractionalScaleEvent(wp_fractional_scale: *fractional_scale_v1.wp_fra
     }
 }
 
-fn updateCursorImage(seat: *Seat) !void {
-    if (true) return;
+fn updateCursorImage(this: *@This(), seat: *Seat) !void {
+    const wl_pointer_id = seat.wl_pointer orelse return;
+    const cursor_surface = seat.cursor_wl_surface orelse return;
 
-    _ = seat;
-    const this = undefined;
-    const width_hint: seizer.tvg.rendering.SizeHint = if (this.wp_viewport != null) .{ .width = (32 * this.pointer_scale) / 120 } else .inherit;
-    // set cursor image
-    var default_cursor_image = try seizer.tvg.rendering.renderBuffer(
-        seizer.platform.allocator(),
-        seizer.platform.allocator(),
-        width_hint,
-        .x16,
-        @embedFile("./cursor_none.tvg"),
-    );
-    defer default_cursor_image.deinit(seizer.platform.allocator());
+    _ = cursor_surface.on_render_listener orelse return;
+    try cursor_surface.on_render_listener.?.callback(cursor_surface.on_render_listener.?, seat.cursor_wl_surface.?);
 
-    const pixel_bytes = std.mem.sliceAsBytes(default_cursor_image.pixels);
-
-    const default_cursor_image_fd = try std.posix.memfd_create("default_cursor", 0);
-    defer std.posix.close(default_cursor_image_fd);
-
-    try std.posix.ftruncate(default_cursor_image_fd, pixel_bytes.len);
-
-    const fd_bytes = std.posix.mmap(null, @intCast(pixel_bytes.len), std.posix.PROT.WRITE | std.posix.PROT.READ, .{ .TYPE = .SHARED }, default_cursor_image_fd, 0) catch @panic("could not mmap cursor fd");
-    defer std.posix.munmap(fd_bytes);
-
-    @memcpy(fd_bytes, pixel_bytes);
-
-    const wl_shm_pool = this.wayland_manager.connection.sendRequest(
-        wayland.wl_shm,
-        this.wayland_manager.globals.wl_shm.?,
-        .create_pool,
-        .{
-            .fd = @enumFromInt(default_cursor_image_fd),
-            .size = @intCast(pixel_bytes.len),
-        },
-    ) catch return error.ConnectionLost;
-    defer wl_shm_pool.sendRequest(.destroy, .{}) catch {};
-
-    const cursor_buffer = try wl_shm_pool.sendRequest(.create_buffer, .{
-        .offset = 0,
-        .width = @intCast(default_cursor_image.width),
-        .height = @intCast(default_cursor_image.height),
-        .stride = @intCast(default_cursor_image.width * @sizeOf(seizer.tvg.rendering.Color8)),
-        .format = .argb8888,
-    });
-
-    const surface = this.cursor_wl_surface orelse return;
-
-    try surface.sendRequest(.attach, .{ .buffer = cursor_buffer.id, .x = 0, .y = 0 });
-    try surface.sendRequest(.damage_buffer, .{ .x = 0, .y = 0, .width = std.math.maxInt(i32), .height = std.math.maxInt(i32) });
-    if (this.wp_viewport) |viewport| {
-        try viewport.sendRequest(.set_source, .{
-            .x = shimizu.Fixed.fromInt(0, 0),
-            .y = shimizu.Fixed.fromInt(0, 0),
-            .width = shimizu.Fixed.fromInt(@intCast(default_cursor_image.width), 0),
-            .height = shimizu.Fixed.fromInt(@intCast(default_cursor_image.height), 0),
-        });
-        try viewport.sendRequest(.set_destination, .{
-            .width = 32,
-            .height = 32,
-        });
-    }
-    try surface.sendRequest(.commit, .{});
-    try this.wl_pointer.?.sendRequest(.set_cursor, .{
-        .serial = this.pointer_serial,
-        .surface = this.cursor_wl_surface.?.id,
-        .hotspot_x = 9,
-        .hotspot_y = 5,
+    const wl_pointer = shimizu.Proxy(shimizu.core.wl_pointer){
+        .connection = &this.connection,
+        .id = wl_pointer_id,
+    };
+    try wl_pointer.sendRequest(.set_cursor, .{
+        .serial = seat.pointer_serial,
+        .surface = cursor_surface.wl_surface,
+        .hotspot_x = seat.cursor_hotspot[0],
+        .hotspot_y = seat.cursor_hotspot[1],
     });
 }
 

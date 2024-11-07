@@ -4,7 +4,9 @@ var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
 var display: seizer.Display = undefined;
 var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
+var render_listener_cursor: seizer.Display.Surface.OnRenderListener = undefined;
 
+var cursor_surface: seizer.Display.Surface = undefined;
 var shield_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 var cursor_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 
@@ -58,15 +60,31 @@ pub fn init() !void {
             .convertAlphaModelTo(.premultiplied);
     }
 
+    try display.initSurface(&cursor_surface, .{ .size = cursor_image.size });
+    cursor_surface.setOnRender(&render_listener_cursor, onCursorRender, null);
+    display.seat.?.cursor_wl_surface = &cursor_surface;
+    display.seat.?.cursor_hotspot = .{ 9, 5 };
+
     seizer.setDeinit(deinit);
 }
 
 pub fn deinit() void {
+    cursor_surface.deinit();
     cursor_image.free(gpa.allocator());
     shield_image.free(gpa.allocator());
     toplevel_surface.deinit();
     display.deinit();
     _ = gpa.deinit();
+}
+
+fn onCursorRender(listener: *seizer.Display.Surface.OnRenderListener, surface: *seizer.Display.Surface) anyerror!void {
+    _ = listener;
+
+    const canvas = try surface.canvas();
+    canvas.clear(.{ .r = 0, .g = 0, .b = 0, .a = 0 });
+    canvas.blit(.{ 0, 0 }, cursor_image);
+
+    try surface.present();
 }
 
 fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface: *seizer.Display.ToplevelSurface) anyerror!void {

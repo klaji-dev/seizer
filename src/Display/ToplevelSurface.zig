@@ -160,7 +160,7 @@ pub fn present(this: *@This()) !void {
 
     // Make sure this surface is in the list of active surfaces
 
-    try this.display.surfaces.put(this.display.allocator, this.wl_surface, this);
+    try this.display.toplevel.put(this.display.allocator, this.wl_surface, this);
 }
 
 pub fn hide(this: *@This()) void {
@@ -178,7 +178,7 @@ pub fn hide(this: *@This()) void {
     }) catch {};
     this.display.connection.sendRequest(wayland.wl_surface, this.wl_surface, .commit, .{}) catch {};
 
-    _ = this.display.surfaces.remove(this.wl_surface);
+    _ = this.display.toplevel.remove(this.wl_surface);
 }
 
 // Canvas implementation
@@ -430,11 +430,6 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
 }
 
 fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.Data, clip: seizer.geometry.AABB(u32)) void {
-    const window_size = this.current_configuration.window_size;
-    const bin_count = .{
-        @divFloor(window_size[0], binning_size) + 1,
-        @divFloor(window_size[1], binning_size) + 1,
-    };
     switch (tag) {
         .blit => {
             const pos = data.blit.pos;
@@ -512,8 +507,8 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
                                 sampler.src_area.min[1] + sample_posf[1] * sampler.src_area.size()[1],
                             };
                             const src_pixel = sampler.texture.getPixel(.{
-                                @intFromFloat(src_posf[0]),
-                                @intFromFloat(src_posf[1]),
+                                @intFromFloat(@max(0, src_posf[0])),
+                                @intFromFloat(@max(0, src_posf[1])),
                             });
                             sample_rect.setPixel(
                                 .{ @intCast(sample_x), @intCast(sample_y) },
@@ -547,7 +542,7 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
         },
         .rect_clear => {
             const d = data.rect_clear;
-            this.framebuffer.set(d.area.clamp(clip), d.color);
+            this.framebuffer.clear(clip, d.area.clamp(clip), d.color);
         },
         .rect_stroke => {
             // TODO
