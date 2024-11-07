@@ -412,6 +412,78 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
+        pub fn compositeSampler(
+            dst: @This(),
+            comptime SamplerContext: type,
+            comptime sample_fn: fn (SamplerContext, pos: [2]u32, sample_rect: Linear(Pixel)) void,
+            sampler_context: SamplerContext,
+        ) void {
+            const min_tile_pos = [2]u32{
+                dst.start_px[0] / tile_size[0],
+                dst.start_px[1] / tile_size[1],
+            };
+            const max_tile_pos = [2]u32{
+                (dst.end_px[0] + (tile_size[0] - 1)) / tile_size[0],
+                (dst.end_px[1] + (tile_size[1] - 1)) / tile_size[1],
+            };
+
+            const size_in_tiles = sizeInTiles(dst.size_px);
+
+            var sample_rect_pixel_buffer: [@as(u32, tile_size[0]) * tile_size[1]]Pixel = undefined;
+
+            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
+                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
+                    const tile_index = tile_y * size_in_tiles[0] + tile_x;
+                    const tile = &dst.tiles[tile_index];
+
+                    const tile_pos_in_px = [2]u32{
+                        @intCast(tile_x * tile_size[0]),
+                        @intCast(tile_y * tile_size[1]),
+                    };
+
+                    const min_in_tile = [2]u32{
+                        dst.start_px[0] -| tile_pos_in_px[0],
+                        dst.start_px[1] -| tile_pos_in_px[1],
+                    };
+                    const max_in_tile = [2]u32{
+                        @min(tile_size[0], (dst.end_px[0] -| tile_pos_in_px[0])),
+                        @min(tile_size[1], (dst.end_px[1] -| tile_pos_in_px[1])),
+                    };
+
+                    const sample_size = .{
+                        max_in_tile[0] - min_in_tile[0],
+                        max_in_tile[1] - min_in_tile[1],
+                    };
+
+                    const sample_rect = Linear(Pixel){
+                        .pixels = &sample_rect_pixel_buffer,
+                        .size = sample_size,
+                        // TODO: contiguous image type?
+                        .stride = sample_size[0],
+                    };
+
+                    // get the pixels we'll need to render
+                    sample_fn(
+                        sampler_context,
+                        .{
+                            tile_pos_in_px[0] + min_in_tile[0] - dst.start_px[0],
+                            tile_pos_in_px[1] + min_in_tile[1] - dst.start_px[1],
+                        },
+                        sample_rect,
+                    );
+
+                    for (min_in_tile[1]..max_in_tile[1], 0..) |y, sample_y| {
+                        for (min_in_tile[0]..max_in_tile[0], 0..) |x, sample_x| {
+                            tile[y][x] = Pixel.compositeSrcOver(
+                                tile[y][x],
+                                sample_rect.getPixel(.{ @intCast(sample_x), @intCast(sample_y) }),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
             const this_size = [2]u32{
                 this.end_px[0] - this.start_px[0],

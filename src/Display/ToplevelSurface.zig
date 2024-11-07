@@ -232,41 +232,110 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
     this.framebuffer.drawFillRect(a, b, options.color);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_posf: [2]f64, dst_sizef: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    std.debug.assert(dst_sizef[0] >= 0 and dst_sizef[1] >= 0);
 
-    if (src_image.size[0] == 0 or src_image.size[1] == 0) return;
-
-    const start_pos = [2]u32{
-        @min(@as(u32, @intFromFloat(@floor(@max(@min(dst_pos[0], dst_pos[0] + dst_size[0]), 0)))), this.current_configuration.window_size[0]),
-        @min(@as(u32, @intFromFloat(@floor(@max(@min(dst_pos[1], dst_pos[1] + dst_size[1]), 0)))), this.current_configuration.window_size[1]),
-    };
-    const end_pos = [2]u32{
-        @min(@as(u32, @intFromFloat(@floor(@max(dst_pos[0], dst_pos[0] + dst_size[0], 0)))), this.current_configuration.window_size[0]),
-        @min(@as(u32, @intFromFloat(@floor(@max(dst_pos[1], dst_pos[1] + dst_size[1], 0)))), this.current_configuration.window_size[1]),
-    };
-
-    const src_size = [2]f64{
+    const src_sizef: [2]f32 = .{
         @floatFromInt(src_image.size[0]),
         @floatFromInt(src_image.size[1]),
     };
 
-    for (start_pos[1]..end_pos[1]) |y| {
-        for (start_pos[0]..end_pos[0]) |x| {
-            const pos = [2]f64{ @floatFromInt(x), @floatFromInt(y) };
-            const texture_coord = [2]f64{
-                std.math.clamp(((pos[0] - dst_pos[0]) / dst_size[0]) * src_size[0], 0, src_size[0] - 1),
-                std.math.clamp(((pos[1] - dst_pos[1]) / dst_size[1]) * src_size[1], 0, src_size[1] - 1),
-            };
-            const dst_pixel = this.framebuffer.getPixel(.{ @intCast(x), @intCast(y) });
-            const src_pixel = src_image.getPixel(.{
-                @intFromFloat(texture_coord[0]),
-                @intFromFloat(texture_coord[1]),
-            });
-            const src_pixel_tint = src_pixel.tint(options.color);
-            this.framebuffer.setPixel(.{ @intCast(x), @intCast(y) }, dst_pixel.compositeSrcOver(src_pixel_tint));
+    const window_sizef = [2]f64{
+        @floatFromInt(this.current_configuration.window_size[0]),
+        @floatFromInt(this.current_configuration.window_size[1]),
+    };
+
+    const dst_start_clamped = .{
+        std.math.clamp(dst_posf[0], 0, window_sizef[0]),
+        std.math.clamp(dst_posf[1], 0, window_sizef[1]),
+    };
+    const dst_end_clamped = .{
+        std.math.clamp(dst_posf[0] + dst_sizef[0], 0, window_sizef[0]),
+        std.math.clamp(dst_posf[1] + dst_sizef[1], 0, window_sizef[1]),
+    };
+
+    const dst_start_pos = [2]u32{
+        @intFromFloat(dst_start_clamped[0]),
+        @intFromFloat(dst_start_clamped[1]),
+    };
+    const dst_end_pos = [2]u32{
+        @intFromFloat(dst_end_clamped[0]),
+        @intFromFloat(dst_end_clamped[1]),
+    };
+
+    const dst_size = [2]u32{
+        dst_end_pos[0] - dst_start_pos[0],
+        dst_end_pos[1] - dst_start_pos[1],
+    };
+    if (dst_size[0] == 0 or dst_size[1] == 0) return;
+
+    const src_start_offset = .{
+        dst_start_clamped[0] - dst_posf[0],
+        dst_start_clamped[1] - dst_posf[1],
+    };
+    const src_end_offset = .{
+        dst_end_clamped[0] - (dst_posf[0] + dst_sizef[0]),
+        dst_end_clamped[1] - (dst_posf[1] + dst_sizef[1]),
+    };
+    const src_start_pos = [2]u32{
+        @intFromFloat(src_start_offset[0]),
+        @intFromFloat(src_start_offset[1]),
+    };
+    const src_end_pos = [2]u32{
+        @intFromFloat(src_sizef[0] + src_end_offset[0]),
+        @intFromFloat(src_sizef[1] + src_end_offset[1]),
+    };
+    const src_size = [2]u32{
+        src_end_pos[0] - src_start_pos[0],
+        src_end_pos[1] - src_start_pos[1],
+    };
+    if (src_size[0] == 0 or src_size[1] == 0) return;
+
+    const dst = this.framebuffer.slice(dst_start_pos, dst_size);
+    const src = src_image.slice(src_start_pos, src_size);
+
+    const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
+    const Sampler = struct {
+        texture: Linear,
+        stride_f: [2]f32,
+        tint: seizer.color.argbf32_premultiplied,
+
+        pub fn sample(sampler: *const @This(), pos: [2]u32, sample_rect: Linear) void {
+            for (0..sample_rect.size[1]) |sample_y| {
+                for (0..sample_rect.size[0]) |sample_x| {
+                    const sample_posf = [2]f32{
+                        @floatFromInt(pos[0] + sample_x),
+                        @floatFromInt(pos[1] + sample_y),
+                    };
+                    const src_posf = .{
+                        sample_posf[0] * sampler.stride_f[0],
+                        sample_posf[1] * sampler.stride_f[1],
+                    };
+                    const src_pixel = sampler.texture.getPixel(.{
+                        @intFromFloat(src_posf[0]),
+                        @intFromFloat(src_posf[1]),
+                    });
+                    sample_rect.setPixel(
+                        .{ @intCast(sample_x), @intCast(sample_y) },
+                        src_pixel.tint(sampler.tint),
+                    );
+                }
+            }
         }
-    }
+    };
+    dst.compositeSampler(
+        *const Sampler,
+        Sampler.sample,
+        &.{
+            .texture = src,
+            .stride_f = .{
+                @floatCast((src_sizef[0] + src_end_offset[0] - src_start_offset[0]) / (dst_end_clamped[0] - dst_start_clamped[0])),
+                @floatCast((src_sizef[1] + src_end_offset[1] - src_start_offset[1]) / (dst_end_clamped[1] - dst_start_clamped[1])),
+            },
+            .tint = options.color,
+        },
+    );
 }
 
 pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {
