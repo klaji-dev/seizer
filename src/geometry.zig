@@ -42,6 +42,30 @@ pub fn Rect(comptime T: type) type {
             };
         }
 
+        pub fn clampRect(value: @This(), bounds: @This()) @This() {
+            const bounds_end = .{
+                bounds.pos[0] + bounds.size[0],
+                bounds.pos[1] + bounds.size[1],
+            };
+
+            const start_clamped = .{
+                std.math.clamp(value.pos[0], bounds.pos[0], bounds_end[0]),
+                std.math.clamp(value.pos[1], bounds.pos[1], bounds_end[1]),
+            };
+            const end_clamped = .{
+                std.math.clamp(value.pos[0] + value.size[0], bounds.pos[0], bounds_end[0]),
+                std.math.clamp(value.pos[1] + value.size[1], bounds.pos[1], bounds_end[1]),
+            };
+
+            return .{
+                .pos = start_clamped,
+                .size = .{
+                    end_clamped[0] - start_clamped[0],
+                    end_clamped[1] - start_clamped[1],
+                },
+            };
+        }
+
         pub fn translate(this: @This(), amount: [2]T) @This() {
             return @This(){
                 .pos = [2]T{
@@ -111,6 +135,19 @@ pub fn AABB(comptime T: type) type {
                 this.max[1] - this.min[1],
             };
         }
+
+        pub fn clamp(value: @This(), bounds: @This()) @This() {
+            return .{
+                .min = .{
+                    std.math.clamp(value.min[0], bounds.min[0], bounds.max[0]),
+                    std.math.clamp(value.min[1], bounds.min[1], bounds.max[1]),
+                },
+                .max = .{
+                    std.math.clamp(value.max[0], bounds.min[0], bounds.max[0]),
+                    std.math.clamp(value.max[1], bounds.min[1], bounds.max[1]),
+                },
+            };
+        }
     };
 }
 
@@ -154,3 +191,5 @@ pub fn Inset(comptime T: type) type {
         }
     };
 }
+
+const std = @import("std");
