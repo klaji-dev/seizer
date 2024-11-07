@@ -41,7 +41,7 @@ pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premul
     this.parent.clear(color);
 }
 
-pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32_premultiplied)) void {
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void {
     _ = this_opaque;
     _ = pos;
     _ = src_image;
@@ -70,7 +70,7 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, opti
     return this.parent.fillRect(clipped_start_pos, clipped_size, options);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Image(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const dst_rect_t = seizer.geometry.Rect(f64){

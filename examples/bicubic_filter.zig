@@ -5,9 +5,9 @@ var display: seizer.Display = undefined;
 var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
-var image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
-var bicubic_upscale: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
-var bicubic_downscale: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
+var image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
+var bicubic_upscale: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
+var bicubic_downscale: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
@@ -15,14 +15,14 @@ pub fn init() !void {
     try display.initToplevelSurface(&toplevel_surface, .{});
     toplevel_surface.setOnRender(&render_listener, onRender, null);
 
-    image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
+    image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
     errdefer image.free(gpa.allocator());
 
-    bicubic_upscale = try seizer.image.Image(seizer.color.argbf32_premultiplied).alloc(gpa.allocator(), .{ 5 * image.size[0], 5 * image.size[1] });
+    bicubic_upscale = try seizer.image.Linear(seizer.color.argbf32_premultiplied).alloc(gpa.allocator(), .{ 5 * image.size[0], 5 * image.size[1] });
     errdefer bicubic_upscale.free(gpa.allocator());
     bicubic_upscale.resize(image);
 
-    bicubic_downscale = try seizer.image.Image(seizer.color.argbf32_premultiplied).alloc(gpa.allocator(), .{ image.size[0] / 2, image.size[1] / 2 });
+    bicubic_downscale = try seizer.image.Linear(seizer.color.argbf32_premultiplied).alloc(gpa.allocator(), .{ image.size[0] / 2, image.size[1] / 2 });
     errdefer bicubic_downscale.free(gpa.allocator());
     bicubic_downscale.resize(image);
 

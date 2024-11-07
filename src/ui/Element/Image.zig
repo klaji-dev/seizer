@@ -2,9 +2,9 @@ stage: *ui.Stage,
 reference_count: usize = 1,
 parent: ?Element = null,
 
-image: seizer.image.Image(seizer.color.argbf32_premultiplied),
+image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
 
-pub fn create(stage: *ui.Stage, image: seizer.image.Image(seizer.color.argbf32_premultiplied)) !*@This() {
+pub fn create(stage: *ui.Stage, image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) !*@This() {
     const this = try stage.gpa.create(@This());
     errdefer stage.gpa.destroy(this);
 

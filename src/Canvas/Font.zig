@@ -1,5 +1,5 @@
 allocator: std.mem.Allocator,
-pages: std.AutoHashMapUnmanaged(u32, seizer.image.Image(seizer.color.argbf32_premultiplied)),
+pages: std.AutoHashMapUnmanaged(u32, seizer.image.Linear(seizer.color.argbf32_premultiplied)),
 glyphs: GlyphMap,
 line_height: f64,
 base: f64,
@@ -27,7 +27,7 @@ pub fn fromFileContents(allocator: std.mem.Allocator, font_contents: []const u8,
 
     var missing_image = false;
 
-    var pages = std.AutoHashMapUnmanaged(u32, seizer.image.Image(seizer.color.argbf32_premultiplied)){};
+    var pages = std.AutoHashMapUnmanaged(u32, seizer.image.Linear(seizer.color.argbf32_premultiplied)){};
     defer pages.deinit(allocator);
     var page_name_iterator = font_data.pages.iterator();
     while (page_name_iterator.next()) |entry| {
@@ -37,7 +37,7 @@ pub fn fromFileContents(allocator: std.mem.Allocator, font_contents: []const u8,
             continue;
         };
         try pages.ensureUnusedCapacity(allocator, 1);
-        var image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(allocator, image_content);
+        var image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).fromMemory(allocator, image_content);
         errdefer image.free(allocator);
 
         pages.putAssumeCapacity(entry.key_ptr.*, image);

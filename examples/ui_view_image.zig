@@ -7,8 +7,8 @@ var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined
 var input_listener: seizer.Display.ToplevelSurface.OnInputListener = undefined;
 
 var font: seizer.Canvas.Font = undefined;
-var ui_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
-var character_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
+var ui_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
+var character_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 var _stage: *seizer.ui.Stage = undefined;
 
 pub fn init() !void {
@@ -27,10 +27,10 @@ pub fn init() !void {
     );
     errdefer font.deinit();
 
-    ui_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
+    ui_image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
     errdefer ui_image.free(gpa.allocator());
 
-    character_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
+    character_image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
     errdefer character_image.free(gpa.allocator());
 
     // initialize ui stage and elements

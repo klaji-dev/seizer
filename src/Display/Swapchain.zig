@@ -82,7 +82,7 @@ fn onWlBufferEvent(listener: *shimizu.Listener, wl_buffer: shimizu.Proxy(shimizu
 
 pub const argb8 = seizer.color.argb(seizer.color.sRGB8, .premultiplied, u8);
 
-const Image = seizer.image.Image(seizer.color.argb8);
+const Image = seizer.image.Linear(seizer.color.argb8);
 const Buffer = @import("./Buffer.zig");
 
 const seizer = @import("../seizer.zig");

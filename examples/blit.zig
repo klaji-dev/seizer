@@ -5,7 +5,7 @@ var display: seizer.Display = undefined;
 var toplevel_surface: seizer.Display.ToplevelSurface = undefined;
 var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined;
 
-var image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
+var image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
@@ -13,7 +13,7 @@ pub fn init() !void {
     try display.initToplevelSurface(&toplevel_surface, .{});
     toplevel_surface.setOnRender(&render_listener, onRender, null);
 
-    image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
+    image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/wedge.png"));
     errdefer image.free(gpa.allocator());
 
     seizer.setDeinit(deinit);

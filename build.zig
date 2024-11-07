@@ -15,7 +15,7 @@ const Example = enum {
     file_browser,
     ui_view_image,
     ui_plot_sine,
-    // colormapped_image,
+    colormapped_image,
     canvas,
 };
 

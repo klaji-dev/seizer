@@ -7,13 +7,14 @@ var render_listener: seizer.Display.ToplevelSurface.OnRenderListener = undefined
 var input_listener: seizer.Display.ToplevelSurface.OnInputListener = undefined;
 
 var font: seizer.Canvas.Font = undefined;
-var ui_image: seizer.image.Image(seizer.color.argbf32_premultiplied) = undefined;
+var ui_image: seizer.image.Linear(seizer.color.argbf32_premultiplied) = undefined;
 var stage: *seizer.ui.Stage = undefined;
 
 pub fn init() !void {
     try display.init(gpa.allocator(), seizer.getLoop());
 
     try display.initToplevelSurface(&toplevel_surface, .{});
+    toplevel_surface.setOnInput(&input_listener, onToplevelInputEvent, null);
     toplevel_surface.setOnRender(&render_listener, onRender, null);
 
     font = try seizer.Canvas.Font.fromFileContents(
@@ -25,7 +26,7 @@ pub fn init() !void {
     );
     errdefer font.deinit();
 
-    ui_image = try seizer.image.Image(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
+    ui_image = try seizer.image.Linear(seizer.color.argbf32_premultiplied).fromMemory(gpa.allocator(), @embedFile("./assets/ui.png"));
     errdefer ui_image.free(gpa.allocator());
 
     stage = try seizer.ui.Stage.create(gpa.allocator(), .{
@@ -94,8 +95,6 @@ pub fn init() !void {
     try frame_flexbox.appendChild(hello_button.element());
 
     seizer.setDeinit(deinit);
-
-    toplevel_surface.setOnInput(&input_listener, onToplevelInputEvent, null);
 }
 
 pub fn deinit() void {
