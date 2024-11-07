@@ -304,7 +304,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                 this.size_px = new_size_px;
                 this.start_px = .{ 0, 0 };
                 this.end_px = new_size_px;
-                this.clear(.{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
+                const bounds = geometry.AABB(u32).init(.{ this.start_px, this.end_px });
+                this.clear(bounds, .{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
                 return;
             }
 
@@ -318,7 +319,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             this.size_px = new_size_px;
             this.start_px = .{ 0, 0 };
             this.end_px = new_size_px;
-            this.clear(.{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
+            const bounds = geometry.AABB(u32).init(.{ this.start_px, this.end_px });
+            this.clear(bounds, .{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
         }
 
         pub fn free(this: @This(), allocator: std.mem.Allocator) void {
@@ -327,19 +329,14 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             allocator.free(this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]);
         }
 
-        pub fn clear(this: @This(), area: seizer.geometry.AABB(u32), pixel: Pixel) void {
-            const slice_area = seizer.geometry.AABB(u32).init(this.start_px, .{ this.end_px[0] - 1, this.end_px[1] - 1 });
-            if (!area.overlaps(slice_area)) return;
-            const rect = area.clamp(slice_area);
-            const left = .{
-                rect.min[0] - this.start_px[0],
-                rect.min[1] - this.start_px[1],
-            };
+        pub fn clear(this: @This(), clip: geometry.AABB(u32), area: geometry.AABB(u32), pixel: Pixel) void {
+            if (!area.overlaps(clip)) return;
+            const clamped = area.clamp(clip);
 
-            const min_tile_pos = this.tilePosFromOffset(left);
-            const max_tile_pos = this.tilePosFromOffset(rect.size());
+            const min_tile_pos = this.tilePosFromOffset(clamped.min);
+            const max_tile_pos = this.tilePosFromOffset(clamped.max);
 
-            const size_in_tiles = sizeInTiles(rect.size());
+            const size_in_tiles = sizeInTiles(clamped.size());
             for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
                 for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0]) |tile_x| {
                     const tile_index = tile_y * size_in_tiles[0] + tile_x;
@@ -565,23 +562,19 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             return .{ @sqrt(dx * dx + dy * dy) - rh, h };
         }
 
-        pub fn drawLine(this: @This(), a: [2]f32, b: [2]f32, r: [2]f32, colors: [2]Pixel) void {
+        pub fn drawLine(this: @This(), clip: geometry.AABB(u32), a: [2]f32, b: [2]f32, r: [2]f32, colors: [2]Pixel) void {
             const rmax = @max(r[0], r[1]);
 
-            const sizef: [2]f32 = .{
-                @floatFromInt(this.end_px[0] - this.start_px[0]),
-                @floatFromInt(this.end_px[1] - this.start_px[1]),
-            };
-            const area = seizer.geometry.AABB(u32).init(this.start_px, this.end_px);
-            const area_line = seizer.geometry.AABB(u32).init(.{
-                @intFromFloat(std.math.clamp(@floor(@min(a[0], b[0]) - rmax), 0, sizef[0])),
-                @intFromFloat(std.math.clamp(@floor(@min(a[1], b[1]) - rmax), 0, sizef[1])),
+            const area_line = seizer.geometry.AABB(f32).init(.{ .{
+                @floor(@min(a[0], b[0]) - rmax),
+                @floor(@min(a[1], b[1]) - rmax),
             }, .{
-                @intFromFloat(std.math.clamp(@ceil(@max(a[0], b[0]) + rmax), 0, sizef[0])),
-                @intFromFloat(std.math.clamp(@ceil(@max(a[1], b[1]) + rmax), 0, sizef[1])),
-            });
+                @ceil(@max(a[0], b[0]) + rmax),
+                @ceil(@max(a[1], b[1]) + rmax),
+            } });
 
-            const overlap = area_line.clamp(area);
+            const overlapf = area_line.clamp(clip.into(f32));
+            const overlap = overlapf.into(u32);
 
             for (overlap.min[1]..overlap.max[1]) |y| {
                 for (overlap.min[0]..overlap.max[0]) |x| {

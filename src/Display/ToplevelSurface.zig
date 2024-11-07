@@ -301,30 +301,26 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AA
 pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
-    const start_f = [2]f32{
-        @floatCast(start[0]),
-        @floatCast(start[1]),
-    };
-    const end_f = [2]f32{
-        @floatCast(end[0]),
-        @floatCast(end[1]),
-    };
+    const start_f = seizer.geometry.vec.into(f32, start);
+    const end_f = seizer.geometry.vec.into(f32, end);
     const end_color = options.end_color orelse options.color;
     const width: f32 = @floatCast(options.width);
     const end_width: f32 = @floatCast(options.end_width orelse width);
 
+    const canvas_clip = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = this.current_configuration.window_size };
     const rmax = @max(width, end_width);
-    const px0: u32 = @intFromFloat(@max(0, @floor(@min(start_f[0], end_f[0]) - rmax)));
-    const px1: u32 = @intFromFloat(@max(0, @ceil(@max(start_f[0], end_f[0]) + rmax)));
-    const py0: u32 = @intFromFloat(@max(0, @floor(@min(start_f[1], end_f[1]) - rmax)));
-    const py1: u32 = @intFromFloat(@max(0, @ceil(@max(start_f[1], end_f[1]) + rmax)));
+    const area_line = seizer.geometry.AABB(f32).init(.{ .{
+        @floor(@min(start_f[0], end_f[0]) - rmax),
+        @floor(@min(start_f[1], end_f[1]) - rmax),
+    }, .{
+        @ceil(@max(start_f[0], end_f[0]) + rmax),
+        @ceil(@max(start_f[1], end_f[1]) + rmax),
+    } });
+    const clipped = area_line.clamp(canvas_clip.into(f32)).into(u32);
 
     this.command.appendAssumeCapacity(.{
         .tag = .line,
-        .renderRect = .{
-            .min = .{ px0, py0 },
-            .max = .{ px1, py1 },
-        },
+        .renderRect = clipped,
         .renderData = .{
             .line = .{
                 .point = .{ start_f, end_f },
@@ -371,29 +367,33 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
         }
     }
 
-    //const tiles_per_bin = seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).sizeInTiles(.{ binning_size, binning_size });
-    //if (this.command_hash.items.len == this.command_hash_prev.items.len) {
-    //    // See if the we can skip rendering
-    //    for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
-    //        if (h.final() != hp.final()) {
-    //            const bin_x = i % bin_count[0];
-    //            const bin_y = i / bin_count[1];
-    //            const tile_start_x: u32 = @intCast(bin_x * tiles_per_bin[0]);
-    //            const tile_start_y: u32 = @intCast(bin_y * tiles_per_bin[1]);
-    //            const tile_offset = [2]u32{ tile_start_x, tile_start_y };
-    //            const tile_slice = this.framebuffer.slice(tile_offset, tiles_per_bin);
-    //            // Hash mismatch! This bin needs to be updated
-    //            for (command.items(.tag), command.items(.renderData)) |tag, data| {
-    //                this.executeCanvasCommand(tag, data, tile_slice);
-    //            }
-    //        }
-    //    }
-    //} else {
-    // First frame or resized, draw everything
-    for (command.items(.tag), command.items(.renderData)) |tag, data| {
-        this.executeCanvasCommand(tag, data, this.framebuffer);
+    const canvas_clip = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = this.current_configuration.window_size };
+    if (this.command_hash.items.len == this.command_hash_prev.items.len) {
+        // See if the we can skip rendering
+        for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
+            if (h.final() != hp.final()) {
+                const bin_x = i % bin_count[0];
+                const bin_y = i / bin_count[1];
+                const px_pos = [2]u32{
+                    @intCast(bin_x * binning_size),
+                    @intCast(bin_y * binning_size),
+                };
+                const rect = seizer.geometry.Rect(u32){
+                    .pos = px_pos,
+                    .size = .{ binning_size, binning_size },
+                };
+                const clip = rect.toAABB().clamp(canvas_clip);
+                // Hash mismatch! This bin needs to be updated
+                for (command.items(.tag), command.items(.renderData)) |tag, data| {
+                    this.executeCanvasCommand(tag, data, clip);
+                }
+            }
+        }
+    } else {
+        for (command.items(.tag), command.items(.renderData)) |tag, data| {
+            this.executeCanvasCommand(tag, data, canvas_clip);
+        }
     }
-    //}
 
     // Swap the memory used for current and previous hash lists
     const hash_list = this.command_hash_prev;
@@ -403,7 +403,7 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
     this.command.shrinkRetainingCapacity(0);
 }
 
-fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.Data, fb: seizer.image.Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied)) void {
+fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.Data, clip: seizer.geometry.AABB(u32)) void {
     switch (tag) {
         .blit => {
             const pos = data.blit.pos;
@@ -435,7 +435,7 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
             };
 
             const src = src_image.slice(src_offset, src_size);
-            const dest = fb.slice(dest_offset, src_size);
+            const dest = this.framebuffer.slice(dest_offset, src_size);
 
             dest.compositeLinear(src);
         },
@@ -445,7 +445,7 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
             const radii = data.line.radii;
             const color = data.line.color;
 
-            fb.drawLine(start, end, radii, color);
+            this.framebuffer.drawLine(clip, start, end, radii, color);
         },
         .rect_texture => {
             const dst_area = data.rect_texture.dst_area;
@@ -526,11 +526,11 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
             const area = data.rect_fill.area;
             const color = data.rect_fill.color;
 
-            fb.drawFillRect(area, color);
+            this.framebuffer.drawFillRect(area, color);
         },
         .rect_clear => {
             const d = data.rect_clear;
-            fb.clear(d.area, d.color);
+            this.framebuffer.clear(clip, d.area, d.color);
         },
         .rect_stroke => {
             // TODO

@@ -99,7 +99,9 @@ pub fn AABB(comptime T: type) type {
         min: [2]T,
         max: [2]T,
 
-        pub fn init(min: [2]T, max: [2]T) @This() {
+        pub fn init(points: [2][2]T) @This() {
+            const min = .{ @min(points[0][0], points[1][0]), @min(points[0][1], points[1][1]) };
+            const max = .{ @max(points[0][0], points[1][0]), @max(points[0][1], points[1][1]) };
             return .{
                 .min = min,
                 .max = max,
