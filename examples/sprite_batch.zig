@@ -134,7 +134,11 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     for (sprites.items(.pos), sprites.items(.size)) |pos, size| {
-        canvas.textureRect(pos, size, player_image, .{});
+        canvas.textureRect(
+            .{ .min = pos, .max = .{ pos[0] + size[0], pos[1] + size[1] } },
+            player_image,
+            .{},
+        );
     }
 
     var text_pos = [2]f64{ 50, 50 };

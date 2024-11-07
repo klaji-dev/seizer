@@ -34,8 +34,10 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     canvas.textureRect(
-        .{ 50, 50 },
-        .{ @max(canvas.size()[0] - 100, 0), @max(canvas.size()[1] - 100, 0) },
+        .{
+            .min = .{ 50, 50 },
+            .max = .{ @max(canvas.size()[0] - 100, 0), @max(canvas.size()[1] - 100, 0) },
+        },
         image,
         .{},
     );

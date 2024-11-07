@@ -65,18 +65,13 @@ fn getMinSize(this: *@This()) [2]f64 {
     };
 }
 
-fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
-    // consr source_rect = .{
-    //     .pos = .{ 0, 0 },
-    //     .size = .{ @floatFromInt(image.size[0]), @floatFromInt(image.size[1]) },
-    // };
-
-    canvas.textureRect(rect.pos, rect.size, this.image, .{});
+fn render(this: *@This(), canvas: Canvas, rect: AABB) void {
+    canvas.textureRect(rect, this.image, .{});
 }
 
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f64);
+const AABB = seizer.geometry.AABB(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

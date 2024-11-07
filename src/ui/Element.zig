@@ -13,13 +13,13 @@ interface: *const Interface,
 const Element = @This();
 
 pub const TransformedRect = struct {
-    rect: Rect,
+    rect: AABB,
     transform: [4][4]f64,
 
     pub fn transformWithTranslation(this: @This()) [4][4]f64 {
         return seizer.geometry.mat4.mul(
             f64,
-            seizer.geometry.mat4.translate(f64, .{ -this.rect.pos[0], -this.rect.pos[1], 0 }),
+            seizer.geometry.mat4.translate(f64, .{ -this.rect.min[0], -this.rect.min[1], 0 }),
             this.transform,
         );
     }
@@ -35,7 +35,7 @@ pub const Interface = struct {
     process_event_fn: *const fn (Element, event: seizer.input.Event) ?Element,
     get_min_size_fn: *const fn (Element) [2]f64,
     layout_fn: *const fn (Element, min_size: [2]f64, max_size: [2]f64) [2]f64 = layoutDefault,
-    render_fn: *const fn (Element, Canvas, Rect) void,
+    render_fn: *const fn (Element, Canvas, AABB) void,
 
     pub fn getTypeErasedFunctions(comptime T: type, typed_fns: struct {
         acquire_fn: *const fn (*T) void,
@@ -47,7 +47,7 @@ pub const Interface = struct {
         process_event_fn: *const fn (*T, event: seizer.input.Event) ?Element,
         get_min_size_fn: *const fn (*T) [2]f64,
         layout_fn: ?*const fn (*T, min_size: [2]f64, max_size: [2]f64) [2]f64 = null,
-        render_fn: *const fn (*T, Canvas, Rect) void,
+        render_fn: *const fn (*T, Canvas, AABB) void,
     }) Interface {
         const type_erased_fns = struct {
             fn acquire(element: Element) void {
@@ -90,7 +90,7 @@ pub const Interface = struct {
                     return element.layoutDefault(min_size, max_size);
                 }
             }
-            fn render(element: Element, canvas: Canvas, rect: Rect) void {
+            fn render(element: Element, canvas: Canvas, rect: AABB) void {
                 const t: *T = @ptrCast(@alignCast(element.ptr));
                 return typed_fns.render_fn(t, canvas, rect);
             }
@@ -149,7 +149,7 @@ pub fn layout(element: Element, min_size: [2]f64, max_size: [2]f64) [2]f64 {
 }
 
 // rendering
-pub fn render(element: Element, canvas: Canvas, rect: Rect) void {
+pub fn render(element: Element, canvas: Canvas, rect: AABB) void {
     return element.interface.render_fn(element, canvas, rect);
 }
 
@@ -167,7 +167,7 @@ pub fn getChildRectDefault(element: Element, child: Element) ?TransformedRect {
     return null;
 }
 
-const Rect = seizer.ui.Rect;
+const AABB = seizer.ui.AABB;
 const seizer = @import("../seizer.zig");
 const std = @import("std");
 const Canvas = @import("../Canvas.zig");

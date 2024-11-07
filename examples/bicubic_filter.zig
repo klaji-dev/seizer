@@ -45,9 +45,15 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     const sizef = canvas.size();
-    canvas.textureRect(.{ 0, 0.0 * sizef[1] / 3.0 }, .{ sizef[0], sizef[1] / 3.0 }, bicubic_downscale, .{});
-    canvas.textureRect(.{ 0, 1.0 * sizef[1] / 3.0 }, .{ sizef[0], sizef[1] / 3.0 }, image, .{});
-    canvas.textureRect(.{ 0, 2.0 * sizef[1] / 3.0 }, .{ sizef[0], sizef[1] / 3.0 }, bicubic_upscale, .{});
+    const y = [4]f64{
+        0,
+        sizef[1] * 1.0 / 3.0,
+        sizef[1] * 2.0 / 3.0,
+        sizef[1],
+    };
+    canvas.textureRect(.{ .min = .{ 0, y[0] }, .max = .{ sizef[0], y[1] } }, bicubic_downscale, .{});
+    canvas.textureRect(.{ .min = .{ 0, y[1] }, .max = .{ sizef[0], y[2] } }, image, .{});
+    canvas.textureRect(.{ .min = .{ 0, y[2] }, .max = .{ sizef[0], y[3] } }, bicubic_upscale, .{});
 
     try surface.present();
 }

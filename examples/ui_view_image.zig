@@ -42,7 +42,7 @@ pub fn init() !void {
         .text_font = &font,
         .text_scale = 1,
         .text_color = seizer.color.argbf32_premultiplied.WHITE,
-        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
+        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(f64).initXY(16, 16)),
         .background_color = seizer.color.argbf32_premultiplied.WHITE,
     });
     errdefer _stage.destroy();
@@ -63,7 +63,7 @@ pub fn init() !void {
     defer title_label.element().release();
     title_label.style = _stage.default_style.with(.{
         .text_color = seizer.color.argbf32_premultiplied.BLACK,
-        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 48, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
+        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 48, 0 }, .{ 48, 48 }), seizer.geometry.Inset(f64).initXY(16, 16)),
     });
 
     const pan_zoom = try seizer.ui.Element.PanZoom.create(_stage);
@@ -132,7 +132,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0, .g = 0, .b = 0, .a = 1.0 });
 
     _stage.needs_layout = true;
-    _stage.render(canvas, canvas.size());
+    _stage.render(canvas, .{ .min = .{ 0, 0 }, .max = canvas.size() });
 
     try surface.present();
 }

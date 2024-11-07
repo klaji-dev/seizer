@@ -81,8 +81,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
         .hover => |hover| {
             if (this.stage.isPointerCaptureElement(this.element())) {
                 const click_pos = [2]f64{
-                    hover.pos[0] - MARGIN[0] - style.padding.min[0],
-                    hover.pos[1] - MARGIN[1] - style.padding.min[1],
+                    hover.pos[0] - MARGIN.min[0] - style.padding.min[0],
+                    hover.pos[1] - MARGIN.min[1] - style.padding.min[1],
                 };
 
                 // check if the mouse is above or below the text field
@@ -138,8 +138,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
             this.stage.capturePointer(this.element());
 
             const click_pos = [2]f64{
-                click.pos[0] - MARGIN[0] - style.padding.min[0],
-                click.pos[1] - MARGIN[1] - style.padding.min[1],
+                click.pos[0] - MARGIN.min[0] - style.padding.min[0],
+                click.pos[1] - MARGIN.min[1] - style.padding.min[1],
             };
 
             var text_layout = style.text_font.textLayout(this.text.items, .{ .pos = .{ 0, 0 }, .scale = style.text_scale });
@@ -286,9 +286,9 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     return null;
 }
 
-const MARGIN = [2]f64{
-    2,
-    2,
+const MARGIN = seizer.geometry.Inset(f64){
+    .min = .{ 2, 2 },
+    .max = .{ 2, 2 },
 };
 
 pub fn getMinSize(this: *@This()) [2]f64 {
@@ -300,12 +300,12 @@ pub fn getMinSize(this: *@This()) [2]f64 {
         this.default_style;
 
     return .{
-        this.width * style.text_font.line_height * style.text_scale + style.padding.size()[0] + 2 * MARGIN[0],
-        style.text_font.line_height * style.text_scale + style.padding.size()[1] + 2 * MARGIN[1],
+        this.width * style.text_font.line_height * style.text_scale + style.padding.size()[0] + MARGIN.size()[0],
+        style.text_font.line_height * style.text_scale + style.padding.size()[1] + MARGIN.size()[1],
     };
 }
 
-fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
+fn render(this: *@This(), parent_canvas: Canvas, rect: AABB) void {
     const style = if (this.stage.isFocused(this.element()))
         this.focused_style
     else if (this.stage.isHovered(this.element()))
@@ -314,14 +314,7 @@ fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
         this.default_style;
 
     parent_canvas.ninePatch(
-        .{
-            rect.pos[0] + MARGIN[0],
-            rect.pos[1] + MARGIN[1],
-        },
-        .{
-            rect.size[0] - 2 * MARGIN[0],
-            style.text_font.line_height * style.text_scale + style.padding.size()[1],
-        },
+        rect.inset(MARGIN),
         style.background_image.image,
         style.background_image.inset,
         .{
@@ -338,36 +331,30 @@ fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
     const pre_selection_size = style.text_font.textSize(this.text.items[0..selection_start], style.text_scale);
     const selection_size = style.text_font.textSize(this.text.items[selection_start..selection_end], style.text_scale);
 
-    const text_rect = seizer.geometry.Rect(f64){
-        .pos = .{
-            rect.pos[0] + MARGIN[0] + style.padding.min[0],
-            rect.pos[1] + MARGIN[1] + style.padding.min[1],
-        },
-        .size = .{
-            rect.size[0] - 2 * MARGIN[0] - style.padding.min[0] - style.padding.max[0],
-            rect.size[1] - 2 * MARGIN[1] - style.padding.min[1] - style.padding.max[1],
-        },
-    };
+    const text_rect = rect.inset(MARGIN).inset(style.padding);
 
     var clipped_canvas = parent_canvas.transformed(.{ .clip = text_rect });
     const canvas = clipped_canvas.canvas();
 
-    _ = canvas.writeText(style.text_font, text_rect.pos, this.text.items, .{
+    _ = canvas.writeText(style.text_font, text_rect.min, this.text.items, .{
         .scale = style.text_scale,
         .color = style.text_color,
     });
     if (this.stage.isFocused(this.element())) {
         canvas.fillRect(
-            .{ rect.pos[0] + MARGIN[0] + style.padding.min[0] + pre_cursor_size[0], rect.pos[1] + MARGIN[1] + style.padding.min[1] },
-            .{ style.text_scale, style.text_font.line_height * style.text_scale },
+            .{
+                .min = .{ text_rect.min[0] + pre_selection_size[0], text_rect.min[1] },
+                .max = .{ text_rect.min[0] + pre_selection_size[0] + selection_size[0], text_rect.max[1] },
+            },
+            SELECTION_COLOR,
+            .{},
+        );
+        canvas.line(
+            .{ text_rect.min[0] + pre_cursor_size[0], text_rect.min[1] },
+            .{ text_rect.min[0] + pre_cursor_size[0], text_rect.max[1] },
             .{
                 .color = style.text_color,
             },
-        );
-        canvas.fillRect(
-            .{ rect.pos[0] + MARGIN[0] + style.padding.min[0] + pre_selection_size[0], rect.pos[1] + MARGIN[1] + style.padding.min[1] },
-            .{ selection_size[0], selection_size[1] },
-            .{ .color = SELECTION_COLOR },
         );
     }
 }
@@ -424,7 +411,7 @@ pub fn insertReplacingSelectedText(this: *@This(), new_text: []const u8) !void {
 }
 
 const seizer = @import("../../seizer.zig");
-const Rect = seizer.geometry.Rect(f64);
+const AABB = seizer.geometry.AABB(f64);
 const Element = ui.Element;
 const ui = @import("../../ui.zig");
 const Canvas = @import("../../Canvas.zig");

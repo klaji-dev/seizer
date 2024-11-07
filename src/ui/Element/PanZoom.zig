@@ -190,28 +190,26 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     return this.output_size;
 }
 
-fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
-    parent_canvas.fillRect(rect.pos, rect.size, .{
-        .color = this.bg_color,
-    });
+fn render(this: *@This(), parent_canvas: Canvas, rect: AABB) void {
+    parent_canvas.fillRect(rect, this.bg_color, .{});
 
     var transformed_canvas = parent_canvas.transformed(.{
         .clip = rect,
         .transform = seizer.geometry.mat4.mul(
             f64,
             panZoomTransform(
-                rect.size,
+                rect.size(),
                 this.size,
                 this.zoom,
                 this.pan,
             ),
-            seizer.geometry.mat4.translate(f64, .{ rect.pos[0], rect.pos[1], 0 }),
+            seizer.geometry.mat4.translate(f64, .{ rect.min[0], rect.min[1], 0 }),
         ),
     });
     const canvas = transformed_canvas.canvas();
 
     for (this.children.keys()) |child| {
-        child.render(canvas, .{ .pos = .{ 0, 0 }, .size = this.size });
+        child.render(canvas, .{ .min = .{ 0, 0 }, .max = this.size });
     }
     for (this.systems.values()) |system| {
         system.render_fn(system.userdata, this, canvas);
@@ -230,13 +228,13 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
     if (this.parent) |parent| {
         if (parent.getChildRect(this.element())) |rect_transform| {
             return .{
-                .rect = .{ .pos = .{ 0, 0 }, .size = this.size },
+                .rect = .{ .min = .{ 0, 0 }, .max = this.size },
                 .transform = seizer.geometry.mat4.mul(f64, transform, rect_transform.transformWithTranslation()),
             };
         }
     }
     return .{
-        .rect = .{ .pos = .{ 0, 0 }, .size = this.size },
+        .rect = .{ .min = .{ 0, 0 }, .max = this.size },
         .transform = transform,
     };
 }
@@ -355,6 +353,6 @@ pub fn panZoomInverse(out_size: [2]f64, child_size: [2]f64, zoom_ln: f64, pan: [
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.ui.Rect;
+const AABB = seizer.ui.AABB;
 const Canvas = seizer.Canvas;
 const std = @import("std");

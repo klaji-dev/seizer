@@ -3,7 +3,7 @@ transform: [4][4]f64,
 clip_area: seizer.geometry.AABB(f64),
 
 pub const InitOptions = struct {
-    clip: seizer.geometry.Rect(f64),
+    clip: seizer.geometry.AABB(f64),
     transform: [4][4]f64 = seizer.geometry.mat4.identity(f64),
 };
 
@@ -11,7 +11,7 @@ pub fn init(parent: seizer.Canvas, options: InitOptions) @This() {
     return .{
         .parent = parent,
         .transform = options.transform,
-        .clip_area = options.clip.toAABB(),
+        .clip_area = options.clip,
     };
 }
 
@@ -48,82 +48,53 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.imag
     std.debug.panic("Canvas.Transformed does not support blitting at this time", .{});
 }
 
-pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, options: seizer.Canvas.RectOptions) void {
+pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: seizer.Canvas.FillRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
-    const transformed_start_pos = seizer.geometry.mat4.mulVec(f64, this.transform, pos ++ .{ 0, 1 });
-    const transformed_size = seizer.geometry.mat4.mulVec(f64, this.transform, size ++ .{ 0, 0 });
+    const transformed_area = seizer.geometry.AABB(f64).init(
+        seizer.geometry.mat4.mulVec(f64, this.transform, area.min ++ .{ 0, 1 })[0..2].*,
+        seizer.geometry.mat4.mulVec(f64, this.transform, area.max ++ .{ 0, 1 })[0..2].*,
+    );
 
-    const clipped_start_pos = .{
-        std.math.clamp(transformed_start_pos[0], this.clip_area.min[0], this.clip_area.max[0]),
-        std.math.clamp(transformed_start_pos[1], this.clip_area.min[1], this.clip_area.max[1]),
-    };
-    const clipped_end_pos = .{
-        std.math.clamp(transformed_start_pos[0] + transformed_size[0], this.clip_area.min[0], this.clip_area.max[0]),
-        std.math.clamp(transformed_start_pos[1] + transformed_size[1], this.clip_area.min[1], this.clip_area.max[1]),
-    };
-    const clipped_size = .{
-        clipped_end_pos[0] - clipped_start_pos[0],
-        clipped_end_pos[1] - clipped_start_pos[1],
-    };
+    const clipped_area = transformed_area.clamp(this.clip_area);
 
-    return this.parent.fillRect(clipped_start_pos, clipped_size, options);
+    return this.parent.fillRect(clipped_area, color, options);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
-    const dst_rect_t = seizer.geometry.Rect(f64){
-        .pos = seizer.geometry.mat4.mulVec(f64, this.transform, dst_pos ++ .{ 0, 1 })[0..2].*,
-        .size = seizer.geometry.mat4.mulVec(f64, this.transform, dst_size ++ .{ 0, 0 })[0..2].*,
+    const dst_area_t = seizer.geometry.AABB(f64){
+        .min = seizer.geometry.mat4.mulVec(f64, this.transform, dst_area.min ++ .{ 0, 1 })[0..2].*,
+        .max = seizer.geometry.mat4.mulVec(f64, this.transform, dst_area.max ++ .{ 0, 1 })[0..2].*,
     };
 
-    const src_sizef = [2]f64{
-        @floatFromInt(src_image.size[0]),
-        @floatFromInt(src_image.size[1]),
-    };
-    // const src_sizef_t = seizer.geometry.mat4.mulVec(f64, this.transform, src_sizef ++ .{ 0, 0 })[0..2].*;
-
-    if (!dst_rect_t.toAABB().overlaps(this.clip_area)) {
+    if (!dst_area_t.overlaps(this.clip_area)) {
         return;
     }
 
-    const dst_clipped_start_pos = .{
-        std.math.clamp(dst_rect_t.pos[0], this.clip_area.min[0], this.clip_area.max[0]),
-        std.math.clamp(dst_rect_t.pos[1], this.clip_area.min[1], this.clip_area.max[1]),
-    };
-    const dst_clipped_end_pos = .{
-        std.math.clamp(dst_rect_t.bottomRight()[0], this.clip_area.min[0], this.clip_area.max[0]),
-        std.math.clamp(dst_rect_t.bottomRight()[1], this.clip_area.min[1], this.clip_area.max[1]),
-    };
+    const dst_area_clipped = dst_area_t.clamp(this.clip_area);
 
-    const src_clipped_offset = .{
-        ((dst_clipped_start_pos[0] - dst_rect_t.pos[0]) / dst_rect_t.size[0]) * src_sizef[0],
-        ((dst_clipped_start_pos[1] - dst_rect_t.pos[1]) / dst_rect_t.size[1]) * src_sizef[1],
+    const src_area = options.src_area orelse seizer.geometry.AABB(f64){
+        .min = .{ 0, 0 },
+        .max = .{ @floatFromInt(src_image.size[0]), @floatFromInt(src_image.size[1]) },
     };
-    const src_clipped_end_offset = .{
-        ((dst_rect_t.bottomRight()[0] - dst_clipped_end_pos[0]) / dst_rect_t.size[0]) * src_sizef[0],
-        ((dst_rect_t.bottomRight()[1] - dst_clipped_end_pos[1]) / dst_rect_t.size[1]) * src_sizef[1],
-    };
-    const src_clipped_size = .{
-        src_sizef[0] - src_clipped_end_offset[0] - src_clipped_offset[0],
-        src_sizef[1] - src_clipped_end_offset[1] - src_clipped_offset[1],
-    };
-
-    const dst_clipped_size = .{
-        dst_clipped_end_pos[0] - dst_clipped_start_pos[0],
-        dst_clipped_end_pos[1] - dst_clipped_start_pos[1],
-    };
-
-    const src_image_clipped = src_image.slice(.{
-        @intFromFloat(src_clipped_offset[0]),
-        @intFromFloat(src_clipped_offset[1]),
-    }, .{
-        @intFromFloat(src_clipped_size[0]),
-        @intFromFloat(src_clipped_size[1]),
+    const src_area_clipped = src_area.inset(.{
+        .min = .{
+            ((dst_area_clipped.min[0] - dst_area_t.min[0]) / dst_area_t.size()[0]) * src_area.size()[0],
+            ((dst_area_clipped.min[1] - dst_area_t.min[1]) / dst_area_t.size()[1]) * src_area.size()[1],
+        },
+        .max = .{
+            ((dst_area_clipped.max[0] - dst_area_t.max[0]) / dst_area_t.size()[0]) * src_area.size()[0],
+            ((dst_area_clipped.max[1] - dst_area_t.max[1]) / dst_area_t.size()[1]) * src_area.size()[1],
+        },
     });
 
-    this.parent.textureRect(dst_clipped_start_pos, dst_clipped_size, src_image_clipped, options);
+    this.parent.textureRect(dst_area_clipped, src_image, .{
+        .src_area = src_area_clipped,
+        .color = options.color,
+        .depth = options.depth,
+    });
 }
 
 pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options: seizer.Canvas.LineOptions) void {

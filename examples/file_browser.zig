@@ -37,7 +37,7 @@ pub fn init() !void {
         .text_font = &_font,
         .text_scale = 1,
         .text_color = seizer.color.argbf32_premultiplied.WHITE,
-        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(u32).initXY(16, 16)),
+        .background_image = seizer.Canvas.NinePatch.init(ui_image.slice(.{ 0, 0 }, .{ 48, 48 }), seizer.geometry.Inset(f64).initXY(16, 16)),
         .background_color = seizer.color.argbf32_premultiplied.WHITE,
     });
     errdefer _stage.destroy();
@@ -75,7 +75,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     _stage.needs_layout = true;
-    _stage.render(canvas, canvas.size());
+    _stage.render(canvas, .{ .min = .{ 0, 0 }, .max = canvas.size() });
 
     try surface.present();
 }
@@ -91,18 +91,18 @@ const FileBrowserElement = struct {
     top_bar_address_label: *seizer.ui.Element.Label,
     top_bar_up_button: *seizer.ui.Element.Button,
 
-    top_bar_back_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_forward_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_refresh_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_address_label_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
-    top_bar_up_button_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    top_bar_back_button_rect: seizer.geometry.AABB(f64) = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
+    top_bar_forward_button_rect: seizer.geometry.AABB(f64) = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
+    top_bar_refresh_button_rect: seizer.geometry.AABB(f64) = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
+    top_bar_address_label_rect: seizer.geometry.AABB(f64) = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
+    top_bar_up_button_rect: seizer.geometry.AABB(f64) = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
 
     directory: std.fs.Dir,
     history: std.ArrayListUnmanaged([]const u8) = .{},
     history_index: usize = 0,
 
     arena: std.heap.ArenaAllocator,
-    entries_rect: seizer.geometry.Rect(f64) = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+    entries_rect: seizer.geometry.AABB(f64) = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
     entries: ?std.ArrayListUnmanaged(Entry) = null,
     hovered: ?usize = null,
 
@@ -275,7 +275,7 @@ const FileBrowserElement = struct {
         switch (event) {
             .hover => |hover| {
                 this.hovered = null;
-                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f64) }){
+                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.AABB(f64) }){
                     .{ this.top_bar_back_button.element(), this.top_bar_back_button_rect },
                     .{ this.top_bar_forward_button.element(), this.top_bar_forward_button_rect },
                     .{ this.top_bar_refresh_button.element(), this.top_bar_refresh_button_rect },
@@ -285,29 +285,29 @@ const FileBrowserElement = struct {
                 for (top_bar_elements) |top_bar_element| {
                     if (top_bar_element[1].contains(hover.pos)) {
                         return top_bar_element[0].processEvent(.{
-                            .hover = hover.transform(seizer.geometry.mat4.translate(f64, top_bar_element[1].pos ++ .{0})),
+                            .hover = hover.transform(seizer.geometry.mat4.translate(f64, top_bar_element[1].min ++ .{0})),
                         });
                     }
                 }
 
-                var pos: [2]f64 = this.entries_rect.pos;
+                var pos: [2]f64 = this.entries_rect.min;
                 if (this.entries) |entries| {
                     for (entries.items, 0..) |entry, i| {
                         pos[1] += @floor((this.spacing - 1) * font.line_height);
-                        const rect = seizer.geometry.Rect(f64){
+                        const rect = seizer.geometry.AABB(f64).fromRect(.{
                             .pos = pos,
-                            .size = .{ this.entries_rect.size[0], font.textSize(entry.name, scale)[1] },
-                        };
+                            .size = .{ this.entries_rect.max[0], font.textSize(entry.name, scale)[1] },
+                        });
                         if (rect.contains(hover.pos)) {
                             this.hovered = i;
                             return this.element();
                         }
-                        pos[1] += rect.size[1];
+                        pos[1] = rect.max[1];
                     }
                 }
             },
             .click => |click| if (click.button == .left and click.pressed) {
-                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f64) }){
+                const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.AABB(f64) }){
                     .{ this.top_bar_back_button.element(), this.top_bar_back_button_rect },
                     .{ this.top_bar_forward_button.element(), this.top_bar_forward_button_rect },
                     .{ this.top_bar_refresh_button.element(), this.top_bar_refresh_button_rect },
@@ -317,7 +317,7 @@ const FileBrowserElement = struct {
                 for (top_bar_elements) |top_bar_element| {
                     if (top_bar_element[1].contains(click.pos)) {
                         return top_bar_element[0].processEvent(.{
-                            .click = click.transform(seizer.geometry.mat4.translate(f64, top_bar_element[1].pos ++ .{0})),
+                            .click = click.transform(seizer.geometry.mat4.translate(f64, top_bar_element[1].min ++ .{0})),
                         });
                     }
                 }
@@ -328,13 +328,13 @@ const FileBrowserElement = struct {
                     }
                 }
 
-                var pos: [2]f64 = this.entries_rect.pos;
+                var pos: [2]f64 = this.entries_rect.min;
                 if (this.entries) |entries| {
                     for (entries.items) |*entry| {
                         pos[1] += @floor((this.spacing - 1) * font.line_height);
                         const rect = seizer.geometry.Rect(f64){
                             .pos = pos,
-                            .size = .{ this.entries_rect.size[0], font.textSize(entry.name, scale)[1] },
+                            .size = .{ this.entries_rect.size()[0], font.textSize(entry.name, scale)[1] },
                         };
                         if (rect.contains(click.pos)) {
                             entry.marked = true;
@@ -383,60 +383,64 @@ const FileBrowserElement = struct {
     pub fn layout(this: *@This(), min: [2]f64, max: [2]f64) [2]f64 {
         _ = min;
 
-        var pos = [2]f64{ 0, 0 };
         this.top_bar_back_button_rect = .{
-            .pos = pos,
-            .size = this.top_bar_back_button.element().getMinSize(),
+            .min = .{ 0, 0 },
+            .max = this.top_bar_back_button.element().getMinSize(),
         };
-        pos[0] += this.top_bar_back_button_rect.size[0];
-
         this.top_bar_forward_button_rect = .{
-            .pos = pos,
-            .size = this.top_bar_forward_button.element().getMinSize(),
+            .min = .{ 0, 0 },
+            .max = this.top_bar_forward_button.element().getMinSize(),
         };
-        pos[0] += this.top_bar_forward_button_rect.size[0];
-
         this.top_bar_refresh_button_rect = .{
-            .pos = pos,
-            .size = this.top_bar_refresh_button.element().getMinSize(),
+            .min = .{ 0, 0 },
+            .max = this.top_bar_refresh_button.element().getMinSize(),
         };
-        pos[0] += this.top_bar_refresh_button_rect.size[0];
+        this.top_bar_up_button_rect = .{
+            .min = .{ 0, 0 },
+            .max = this.top_bar_up_button.element().getMinSize(),
+        };
+        this.top_bar_address_label_rect = .{
+            .min = .{ 0, 0 },
+            .max = this.top_bar_address_label.element().getMinSize(),
+        };
 
-        this.top_bar_up_button_rect.size = this.top_bar_up_button.element().getMinSize();
-        this.top_bar_up_button_rect.pos[0] = max[0] - this.top_bar_up_button_rect.size[0];
+        this.top_bar_back_button_rect = this.top_bar_back_button_rect.translate(.{ 0, 0 });
+        this.top_bar_forward_button_rect = this.top_bar_forward_button_rect.translate(.{ this.top_bar_back_button_rect.max[0], 0 });
+        this.top_bar_refresh_button_rect = this.top_bar_refresh_button_rect.translate(.{ this.top_bar_forward_button_rect.max[0], 0 });
 
-        this.top_bar_address_label_rect.pos = pos;
-        this.top_bar_address_label_rect.size[0] = this.top_bar_up_button_rect.pos[0] - this.top_bar_address_label_rect.pos[0];
-        this.top_bar_address_label_rect.size[1] = this.top_bar_address_label.element().getMinSize()[1];
+        this.top_bar_up_button_rect = this.top_bar_up_button_rect.translate(.{ max[0] - this.top_bar_up_button_rect.max[0], 0 });
 
-        const top_bar_height = std.mem.max(f64, &.{
-            this.top_bar_back_button_rect.size[1],
-            this.top_bar_forward_button_rect.size[1],
-            this.top_bar_refresh_button_rect.size[1],
-            this.top_bar_address_label_rect.size[1],
-            this.top_bar_up_button_rect.size[1],
-        });
+        this.top_bar_address_label_rect.min[0] = this.top_bar_refresh_button_rect.max[0];
+        this.top_bar_address_label_rect.max[0] = this.top_bar_up_button_rect.min[0];
 
-        this.entries_rect.pos = [2]f64{ 0, top_bar_height };
-        this.entries_rect.size = [2]f64{ max[0], 0 };
+        const top_bar_height = @max(
+            this.top_bar_back_button_rect.max[1],
+            this.top_bar_forward_button_rect.max[1],
+            this.top_bar_refresh_button_rect.max[1],
+            this.top_bar_address_label_rect.max[1],
+            this.top_bar_up_button_rect.max[1],
+        );
+
+        this.entries_rect.min = [2]f64{ 0, top_bar_height };
+        this.entries_rect.max = [2]f64{ max[0], top_bar_height };
         if (this.entries) |entries| {
             for (entries.items) |entry| {
                 // add some extra spacing between text
-                this.entries_rect.size[1] += (this.spacing - 1) * this.stage.default_style.text_font.line_height;
+                this.entries_rect.max[1] += (this.spacing - 1) * this.stage.default_style.text_font.line_height;
                 const entry_size = this.stage.default_style.text_font.textSize(entry.name, this.stage.default_style.text_scale);
-                this.entries_rect.size[0] = @max(this.entries_rect.size[0], entry_size[0]);
-                this.entries_rect.size[1] += entry_size[1];
+                this.entries_rect.max[0] = @max(this.entries_rect.max[0], entry_size[0]);
+                this.entries_rect.max[1] += entry_size[1];
             }
         }
         return max;
     }
 
-    fn fileBrowserRender(this: *@This(), canvas: seizer.Canvas, rect: seizer.geometry.Rect(f64)) void {
+    fn fileBrowserRender(this: *@This(), canvas: seizer.Canvas, rect: seizer.geometry.AABB(f64)) void {
         const entries = this.entries orelse return;
 
         const element_hovered = if (this.stage.hovered_element) |hovered| hovered.ptr == this.element().ptr else false;
 
-        const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.Rect(f64) }){
+        const top_bar_elements = &[_]std.meta.Tuple(&.{ seizer.ui.Element, seizer.geometry.AABB(f64) }){
             .{ this.top_bar_back_button.element(), this.top_bar_back_button_rect },
             .{ this.top_bar_forward_button.element(), this.top_bar_forward_button_rect },
             .{ this.top_bar_refresh_button.element(), this.top_bar_refresh_button_rect },
@@ -447,17 +451,17 @@ const FileBrowserElement = struct {
             top_bar_element[0].render(canvas, top_bar_element[1]);
         }
 
-        var pos = this.entries_rect.pos;
+        var pos = this.entries_rect.min;
         for (entries.items, 0..) |entry, i| {
             pos[1] += @floor((this.spacing - 1) * this.stage.default_style.text_font.line_height);
 
             const entry_hovered = this.hovered != null and this.hovered.? == i;
+            const entry_rect = seizer.geometry.Rect(f64){
+                .pos = pos,
+                .size = .{ rect.size()[0], this.stage.default_style.text_font.line_height },
+            };
             if (element_hovered and entry_hovered) {
-                canvas.fillRect(
-                    pos,
-                    .{ rect.size[0], this.stage.default_style.text_font.line_height },
-                    .{ .color = HOVERED_BG_COLOR },
-                );
+                canvas.fillRect(entry_rect.toAABB(), HOVERED_BG_COLOR, .{});
             }
 
             // const bg_color: ?seizer.color.argbf32_premultiplied = if (entry.marked) MARKED_BG_COLOR else null;

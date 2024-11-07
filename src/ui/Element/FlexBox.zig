@@ -2,7 +2,7 @@ stage: *ui.Stage,
 reference_count: usize = 1,
 parent: ?Element = null,
 
-children: std.AutoArrayHashMapUnmanaged(Element, Rect) = .{},
+children: std.AutoArrayHashMapUnmanaged(Element, AABB) = .{},
 direction: Direction = .column,
 justification: Justification = .start,
 cross_align: CrossAlign = .start,
@@ -34,7 +34,7 @@ pub fn create(stage: *ui.Stage) !*@This() {
 }
 
 pub fn appendChild(this: *@This(), child: Element) !void {
-    try this.children.putNoClobber(this.stage.gpa, child, .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } });
+    try this.children.putNoClobber(this.stage.gpa, child, .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } });
     child.acquire();
     child.setParent(this.element());
     this.stage.needs_layout = true;
@@ -89,13 +89,7 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
     if (this.parent) |parent| {
         if (parent.getChildRect(this.element())) |rect_transform| {
             return .{
-                .rect = .{
-                    .pos = .{
-                        rect_transform.rect.pos[0] + child_rect.pos[0],
-                        rect_transform.rect.pos[1] + child_rect.pos[1],
-                    },
-                    .size = child_rect.size,
-                },
+                .rect = child_rect.translate(rect_transform.rect.min),
                 .transform = rect_transform.transform,
             };
         }
@@ -112,8 +106,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
             for (this.children.keys(), this.children.values()) |child_element, child_rect| {
                 if (child_rect.contains(hover.pos)) {
                     const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
-                        -child_rect.pos[0],
-                        -child_rect.pos[1],
+                        -child_rect.min[0],
+                        -child_rect.min[1],
                         0,
                     }));
 
@@ -127,8 +121,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
             for (this.children.keys(), this.children.values()) |child_element, child_rect| {
                 if (child_rect.contains(click.pos)) {
                     const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
-                        -child_rect.pos[0],
-                        -child_rect.pos[1],
+                        -child_rect.min[0],
+                        -child_rect.min[1],
                         0,
                     }));
 
@@ -191,13 +185,14 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
         constraint_max[main_axis] = main_equal_space_per_child;
         constraint_max[cross_axis] = max_size[cross_axis];
 
-        child_rect.size = child_element.layout(constraint_min, constraint_max);
-        if (child_rect.size[main_axis] >= main_equal_space_per_child) {
+        const child_size = child_element.layout(constraint_min, constraint_max);
+        child_rect.* = .{ .min = .{ 0, 0 }, .max = child_size };
+        if (child_size[main_axis] >= main_equal_space_per_child) {
             children_requesting_space += 1;
         }
 
-        main_space_used += child_rect.size[main_axis];
-        cross_min_width = @max(cross_min_width, child_rect.size[cross_axis]);
+        main_space_used += child_size[main_axis];
+        cross_min_width = @max(cross_min_width, child_size[cross_axis]);
     }
 
     // Do a second pass where we allocate more space to any children that used their full amount of space
@@ -213,23 +208,23 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
             var constraint_min: [2]f64 = undefined;
             var constraint_max: [2]f64 = undefined;
 
-            constraint_min[main_axis] = child_rect.size[main_axis];
-            constraint_min[cross_axis] = child_rect.size[cross_axis];
+            constraint_min[main_axis] = child_rect.max[main_axis];
+            constraint_min[cross_axis] = child_rect.max[cross_axis];
 
-            if (child_rect.size[main_axis] >= main_equal_space_per_child) {
-                constraint_max[main_axis] = child_rect.size[main_axis] + main_space_per_grow;
+            if (child_rect.max[main_axis] >= main_equal_space_per_child) {
+                constraint_max[main_axis] = child_rect.max[main_axis] + main_space_per_grow;
             } else {
-                constraint_max[main_axis] = child_rect.size[main_axis];
+                constraint_max[main_axis] = child_rect.max[main_axis];
             }
             constraint_max[cross_axis] = max_size[cross_axis];
 
-            child_rect.size = child_element.layout(constraint_min, constraint_max);
-            if (child_rect.size[main_axis] >= main_equal_space_per_child) {
+            child_rect.max = child_element.layout(constraint_min, constraint_max);
+            if (child_rect.max[main_axis] >= main_equal_space_per_child) {
                 children_requesting_space += 1;
             }
 
-            main_space_used += child_rect.size[main_axis];
-            cross_min_width = @max(cross_min_width, child_rect.size[cross_axis]);
+            main_space_used += child_rect.max[main_axis];
+            cross_min_width = @max(cross_min_width, child_rect.max[cross_axis]);
         }
     }
 
@@ -258,15 +253,17 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     var main_pos: f64 = space_before;
 
     for (this.children.values()) |*child_rect| {
-        child_rect.pos[main_axis] = main_pos;
-
-        child_rect.pos[cross_axis] = switch (this.cross_align) {
+        var child_translate: [2]f64 = undefined;
+        child_translate[main_axis] = main_pos;
+        child_translate[cross_axis] = switch (this.cross_align) {
             .start => 0,
-            .center => (cross_axis_size - child_rect.size[cross_axis]) / 2,
-            .end => cross_axis_size - child_rect.size[cross_axis],
+            .center => (cross_axis_size - child_rect.size()[cross_axis]) / 2,
+            .end => cross_axis_size - child_rect.size()[cross_axis],
         };
 
-        main_pos += child_rect.size[main_axis] + space_between;
+        child_rect.* = child_rect.translate(child_translate);
+
+        main_pos = child_rect.max[main_axis] + space_between;
     }
 
     var bounds = [2]f64{ 0, 0 };
@@ -275,21 +272,15 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     return bounds;
 }
 
-fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
+fn render(this: *@This(), canvas: Canvas, rect: AABB) void {
     for (this.children.keys(), this.children.values()) |child_element, child_rect| {
-        child_element.render(canvas, .{
-            .pos = .{
-                rect.pos[0] + child_rect.pos[0],
-                rect.pos[1] + child_rect.pos[1],
-            },
-            .size = child_rect.size,
-        });
+        child_element.render(canvas, child_rect.translate(rect.min));
     }
 }
 
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f64);
+const AABB = seizer.geometry.AABB(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

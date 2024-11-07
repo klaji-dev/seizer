@@ -254,17 +254,15 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     return max_size;
 }
 
-fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
-    parent_canvas.fillRect(rect.pos, rect.size, .{
-        .color = this.bg_color,
-    });
+fn render(this: *@This(), parent_canvas: Canvas, rect: AABB) void {
+    parent_canvas.fillRect(rect, this.bg_color, .{});
 
     var clipped_canvas = parent_canvas.transformed(.{ .clip = rect });
     const canvas = clipped_canvas.canvas();
 
     // transform before sending the points to the canvas so that line size is the same size regardless of zoom
     const transform = rangeTransform(
-        rect.size,
+        rect.size(),
         .{ .linear, this.y_axis_type },
         .{
             if (this.x_view_range) |vr| vr[0] else this.x_range[0],
@@ -292,8 +290,8 @@ fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
             const line_pos1 = seizer.geometry.mat4.mulVec(f64, transform, .{ x1 + line.offset[0], y1, 0, 1 })[0..2].*;
 
             canvas.line(
-                .{ rect.pos[0] + line_pos0[0], rect.pos[1] + line_pos0[1] },
-                .{ rect.pos[0] + line_pos1[0], rect.pos[1] + line_pos1[1] },
+                .{ rect.min[0] + line_pos0[0], rect.min[1] + line_pos0[1] },
+                .{ rect.min[0] + line_pos1[0], rect.min[1] + line_pos1[1] },
                 .{ .width = 1.5, .color = line.color },
             );
         }
@@ -303,15 +301,18 @@ fn render(this: *@This(), parent_canvas: Canvas, rect: Rect) void {
     if (this.drag_start_pos) |start_pos| {
         const drag_pos = seizer.geometry.mat4.mulVec(f64, transform, .{ start_pos[0], 0, 0, 1 })[0..2].*;
         canvas.fillRect(
-            .{ rect.pos[0] + drag_pos[0], rect.pos[1] },
-            .{ hover_hline_pos[0] - drag_pos[0], rect.size[1] },
-            .{ .color = SELECT_COLOR },
+            .{
+                .min = .{ rect.min[0] + drag_pos[0], rect.min[1] },
+                .max = .{ hover_hline_pos[0], rect.max[1] },
+            },
+            SELECT_COLOR,
+            .{},
         );
     }
     if (std.meta.eql(this.stage.hovered_element, this.element())) {
         canvas.line(
-            .{ rect.pos[0] + hover_hline_pos[0], rect.pos[1] },
-            .{ rect.pos[0] + hover_hline_pos[0], rect.pos[1] + rect.size[1] },
+            .{ rect.min[0] + hover_hline_pos[0], rect.min[1] },
+            .{ rect.min[0] + hover_hline_pos[0], rect.max[1] },
             .{ .color = HOVER_COLOR },
         );
     }
@@ -420,6 +421,6 @@ pub fn rangeTransformInverse(out_size: [2]f64, axis_types: [2]AxisType, min_coor
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.ui.Rect;
+const AABB = seizer.ui.AABB;
 const Canvas = seizer.Canvas;
 const std = @import("std");

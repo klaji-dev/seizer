@@ -4,7 +4,7 @@ parent: ?Element = null,
 style: ui.Style,
 
 child: ?Element = null,
-child_rect: Rect = .{ .pos = .{ 0, 0 }, .size = .{ 0, 0 } },
+child_rect: AABB = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
 
 pub fn create(stage: *ui.Stage) !*@This() {
     const this = try stage.gpa.create(@This());
@@ -77,11 +77,14 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
         if (parent.getChildRect(this.element())) |parent_rect_transform| {
             return .{
                 .rect = .{
-                    .pos = .{
-                        parent_rect_transform.rect.pos[0] + this.child_rect.pos[0],
-                        parent_rect_transform.rect.pos[1] + this.child_rect.pos[1],
+                    .min = .{
+                        parent_rect_transform.rect.min[0] + this.child_rect.min[0],
+                        parent_rect_transform.rect.min[1] + this.child_rect.min[1],
                     },
-                    .size = this.child_rect.size,
+                    .max = .{
+                        parent_rect_transform.rect.min[0] + this.child_rect.max[0],
+                        parent_rect_transform.rect.min[1] + this.child_rect.max[1],
+                    },
                 },
                 .transform = parent_rect_transform.transform,
             };
@@ -97,8 +100,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     if (this.child == null) return null;
 
     const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
-        -this.child_rect.pos[0],
-        -this.child_rect.pos[1],
+        -this.child_rect.min[0],
+        -this.child_rect.min[1],
         0,
     }));
 
@@ -141,8 +144,11 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
             max_size[1] - padding_size[1],
         });
         this.child_rect = .{
-            .pos = this.style.padding.min,
-            .size = child_size,
+            .min = this.style.padding.min,
+            .max = .{
+                this.style.padding.min[0] + child_size[0],
+                this.style.padding.min[1] + child_size[1],
+            },
         };
         return .{
             child_size[0] + padding_size[0],
@@ -153,25 +159,19 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
     return padding_size;
 }
 
-fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
-    canvas.ninePatch(rect.pos, rect.size, this.style.background_image.image, this.style.background_image.inset, .{
+fn render(this: *@This(), canvas: Canvas, rect: AABB) void {
+    canvas.ninePatch(rect, this.style.background_image.image, this.style.background_image.inset, .{
         .color = this.style.background_color,
     });
 
     if (this.child) |child| {
-        child.render(canvas, .{
-            .pos = .{
-                rect.pos[0] + this.child_rect.pos[0],
-                rect.pos[1] + this.child_rect.pos[1],
-            },
-            .size = this.child_rect.size,
-        });
+        child.render(canvas, this.child_rect.translate(rect.min));
     }
 }
 
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f64);
+const AABB = seizer.geometry.AABB(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

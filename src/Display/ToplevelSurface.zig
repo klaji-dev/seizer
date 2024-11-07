@@ -220,12 +220,13 @@ const Command = struct {
             radii: [2]f32,
         },
         rect_texture: struct {
-            rect_dst: seizer.geometry.Rect(f64),
+            dst_area: seizer.geometry.AABB(f64),
+            src_area: seizer.geometry.AABB(f64),
             src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
             color: seizer.color.argbf32_premultiplied,
         },
         rect_fill: struct {
-            rect_dst: seizer.geometry.Rect(f64),
+            area: seizer.geometry.AABB(f64),
             color: seizer.color.argbf32_premultiplied,
         },
         rect_clear: struct {
@@ -266,32 +267,35 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.imag
     });
 }
 
-pub fn canvas_fillRect(this_opaque: ?*anyopaque, pos: [2]f64, size: [2]f64, options: seizer.Canvas.RectOptions) void {
+pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: seizer.Canvas.FillRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
+    _ = options;
 
     this.command.appendAssumeCapacity(.{
         .tag = .rect_fill,
         .renderRect = .{
-            .min = .{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) },
-            .max = .{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) },
+            .min = .{ @intFromFloat(area.min[0]), @intFromFloat(area.min[1]) },
+            .max = .{ @intFromFloat(area.max[0]), @intFromFloat(area.max[1]) },
         },
         .renderData = .{ .rect_fill = .{
-            .rect_dst = .{ .pos = pos, .size = size },
-            .color = options.color,
+            .area = area,
+            .color = color,
         } },
     });
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_posf: [2]f64, dst_sizef: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.RectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
+
     this.command.appendAssumeCapacity(.{
         .tag = .rect_texture,
         .renderRect = .{
-            .min = .{ @intFromFloat(dst_posf[0]), @intFromFloat(dst_posf[1]) },
-            .max = .{ @intFromFloat(dst_posf[0] + dst_sizef[0]), @intFromFloat(dst_posf[1] + dst_sizef[1]) },
+            .min = .{ @intFromFloat(dst_area.min[0]), @intFromFloat(dst_area.min[1]) },
+            .max = .{ @intFromFloat(dst_area.max[0]), @intFromFloat(dst_area.max[1]) },
         },
         .renderData = .{ .rect_texture = .{
-            .rect_dst = .{ .pos = dst_posf, .size = dst_sizef },
+            .dst_area = dst_area,
+            .src_area = options.src_area orelse .{ .min = .{ 0, 0 }, .max = .{ @floatFromInt(src_image.size[0]), @floatFromInt(src_image.size[1]) } },
             .src_image = src_image,
             .color = options.color,
         } },
@@ -448,88 +452,51 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
             fb.drawLine(start, end, radii, color);
         },
         .rect_texture => {
-            const dst_posf = data.rect_texture.rect_dst.pos;
-            const dst_sizef = data.rect_texture.rect_dst.size;
+            const dst_area = data.rect_texture.dst_area;
+            const src_area = data.rect_texture.src_area;
             const src_image = data.rect_texture.src_image;
             const color = data.rect_texture.color;
 
-            std.debug.assert(dst_sizef[0] >= 0 and dst_sizef[1] >= 0);
+            std.debug.assert(dst_area.size()[0] >= 0 and dst_area.size()[1] >= 0);
 
-            const src_sizef: [2]f32 = .{
-                @floatFromInt(src_image.size[0]),
-                @floatFromInt(src_image.size[1]),
-            };
-
-            const window_sizef = [2]f64{
-                @floatFromInt(this.current_configuration.window_size[0]),
-                @floatFromInt(this.current_configuration.window_size[1]),
-            };
-
-            const dst_start_clamped = .{
-                std.math.clamp(dst_posf[0], 0, window_sizef[0]),
-                std.math.clamp(dst_posf[1], 0, window_sizef[1]),
-            };
-            const dst_end_clamped = .{
-                std.math.clamp(dst_posf[0] + dst_sizef[0], 0, window_sizef[0]),
-                std.math.clamp(dst_posf[1] + dst_sizef[1], 0, window_sizef[1]),
-            };
+            const dst_area_clamped = dst_area.clamp(.{
+                .min = .{ 0, 0 },
+                .max = .{
+                    @floatFromInt(this.current_configuration.window_size[0]),
+                    @floatFromInt(this.current_configuration.window_size[1]),
+                },
+            });
 
             const dst_start_pos = [2]u32{
-                @intFromFloat(dst_start_clamped[0]),
-                @intFromFloat(dst_start_clamped[1]),
+                @intFromFloat(dst_area_clamped.min[0]),
+                @intFromFloat(dst_area_clamped.min[1]),
             };
-            const dst_end_pos = [2]u32{
-                @intFromFloat(dst_end_clamped[0]),
-                @intFromFloat(dst_end_clamped[1]),
-            };
-
             const dst_size = [2]u32{
-                dst_end_pos[0] - dst_start_pos[0],
-                dst_end_pos[1] - dst_start_pos[1],
+                @intFromFloat(dst_area_clamped.size()[0]),
+                @intFromFloat(dst_area_clamped.size()[1]),
             };
             if (dst_size[0] == 0 or dst_size[1] == 0) return;
 
-            const src_start_offset = .{
-                dst_start_clamped[0] - dst_posf[0],
-                dst_start_clamped[1] - dst_posf[1],
-            };
-            const src_end_offset = .{
-                dst_end_clamped[0] - (dst_posf[0] + dst_sizef[0]),
-                dst_end_clamped[1] - (dst_posf[1] + dst_sizef[1]),
-            };
-            const src_start_pos = [2]u32{
-                @intFromFloat(src_start_offset[0]),
-                @intFromFloat(src_start_offset[1]),
-            };
-            const src_end_pos = [2]u32{
-                @intFromFloat(src_sizef[0] + src_end_offset[0]),
-                @intFromFloat(src_sizef[1] + src_end_offset[1]),
-            };
-            const src_size = [2]u32{
-                src_end_pos[0] - src_start_pos[0],
-                src_end_pos[1] - src_start_pos[1],
-            };
-            if (src_size[0] == 0 or src_size[1] == 0) return;
-
             const dst = this.framebuffer.slice(dst_start_pos, dst_size);
-            const src = src_image.slice(src_start_pos, src_size);
 
             const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
             const Sampler = struct {
                 texture: Linear,
-                stride_f: [2]f32,
+                dst_offset: [2]f64,
+                dst_size: [2]f64,
+                src_area: seizer.geometry.AABB(f64),
                 tint: seizer.color.argbf32_premultiplied,
 
                 pub fn sample(sampler: *const @This(), pos: [2]u32, sample_rect: Linear) void {
                     for (0..sample_rect.size[1]) |sample_y| {
                         for (0..sample_rect.size[0]) |sample_x| {
-                            const sample_posf = [2]f32{
-                                @floatFromInt(pos[0] + sample_x),
-                                @floatFromInt(pos[1] + sample_y),
+                            const sample_posf = [2]f64{
+                                (@as(f64, @floatFromInt(pos[0] + sample_x)) + sampler.dst_offset[0]) / sampler.dst_size[0],
+                                (@as(f64, @floatFromInt(pos[1] + sample_y)) + sampler.dst_offset[1]) / sampler.dst_size[1],
                             };
                             const src_posf = .{
-                                sample_posf[0] * sampler.stride_f[0],
-                                sample_posf[1] * sampler.stride_f[1],
+                                sampler.src_area.min[0] + sample_posf[0] * sampler.src_area.size()[0],
+                                sampler.src_area.min[1] + sample_posf[1] * sampler.src_area.size()[1],
                             };
                             const src_pixel = sampler.texture.getPixel(.{
                                 @intFromFloat(src_posf[0]),
@@ -543,25 +510,27 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
                     }
                 }
             };
+
             dst.compositeSampler(
                 *const Sampler,
                 Sampler.sample,
                 &.{
-                    .texture = src,
-                    .stride_f = .{
-                        @floatCast((src_sizef[0] + src_end_offset[0] - src_start_offset[0]) / (dst_end_clamped[0] - dst_start_clamped[0])),
-                        @floatCast((src_sizef[1] + src_end_offset[1] - src_start_offset[1]) / (dst_end_clamped[1] - dst_start_clamped[1])),
+                    .texture = src_image,
+                    .dst_offset = .{
+                        dst_area_clamped.min[0] - dst_area.min[0],
+                        dst_area_clamped.min[1] - dst_area.min[1],
                     },
+                    .dst_size = dst_area.size(),
+                    .src_area = src_area,
                     .tint = color,
                 },
             );
         },
         .rect_fill => {
-            const pos = data.rect_fill.rect_dst.pos;
-            const size = data.rect_fill.rect_dst.size;
+            const area = data.rect_fill.area;
             const color = data.rect_fill.color;
-            const a = [2]i32{ @intFromFloat(pos[0]), @intFromFloat(pos[1]) };
-            const b = [2]i32{ @intFromFloat(pos[0] + size[0]), @intFromFloat(pos[1] + size[1]) };
+            const a = [2]i32{ @intFromFloat(area.min[0]), @intFromFloat(area.max[1]) };
+            const b = [2]i32{ @intFromFloat(area.min[0]), @intFromFloat(area.max[1]) };
 
             fb.drawFillRect(a, b, color);
         },

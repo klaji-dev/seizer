@@ -1,6 +1,6 @@
 pub const Element = @import("./ui/Element.zig");
 
-pub const Rect = seizer.geometry.Rect(f64);
+pub const AABB = seizer.geometry.AABB(f64);
 
 pub const Stage = struct {
     gpa: std.mem.Allocator,
@@ -76,20 +76,20 @@ pub const Stage = struct {
         return false;
     }
 
-    pub fn render(this: *Stage, canvas: Canvas, window_size: [2]f64) void {
+    pub fn render(this: *Stage, canvas: Canvas, area: AABB) void {
         if (this.needs_layout) {
-            if (this.root) |r| _ = r.layout(window_size, window_size);
+            if (this.root) |r| _ = r.layout(area.size(), area.size());
             for (this.popups.keys()) |popup| {
-                _ = popup.layout(.{ 0, 0 }, window_size);
+                _ = popup.layout(.{ 0, 0 }, area.size());
             }
             this.needs_layout = false;
         }
 
         if (this.root) |r| {
-            r.render(canvas, .{ .pos = .{ 0, 0 }, .size = window_size });
+            r.render(canvas, area);
         }
         for (this.popups.keys()) |popup| {
-            popup.render(canvas, .{ .pos = .{ 0, 0 }, .size = window_size });
+            popup.render(canvas, area);
         }
     }
 

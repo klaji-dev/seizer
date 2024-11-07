@@ -106,6 +106,39 @@ pub fn AABB(comptime T: type) type {
             };
         }
 
+        pub fn fromRect(rect: Rect(T)) @This() {
+            return .{
+                .min = rect.topLeft(),
+                .max = rect.bottomRight(),
+            };
+        }
+
+        pub fn translate(this: @This(), amount: [2]T) @This() {
+            return @This(){
+                .min = [2]T{
+                    this.min[0] + amount[0],
+                    this.min[1] + amount[1],
+                },
+                .max = [2]T{
+                    this.max[0] + amount[0],
+                    this.max[1] + amount[1],
+                },
+            };
+        }
+
+        pub fn inset(this: @This(), amount: Inset(T)) @This() {
+            return @This(){
+                .min = [2]T{
+                    this.min[0] + amount.min[0],
+                    this.min[1] + amount.min[1],
+                },
+                .max = [2]T{
+                    this.max[0] - amount.max[0],
+                    this.max[1] - amount.max[1],
+                },
+            };
+        }
+
         pub fn contains(this: @This(), point: [2]T) bool {
             return point[0] >= this.min[0] and
                 point[1] >= this.min[1] and

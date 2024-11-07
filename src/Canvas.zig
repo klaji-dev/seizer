@@ -11,8 +11,8 @@ pub const Interface = struct {
     size: *const fn (?*anyopaque) [2]f64,
     clear: *const fn (?*anyopaque, seizer.color.argbf32_premultiplied) void,
     blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void,
-    texture_rect: *const fn (?*anyopaque, dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: RectOptions) void,
-    fill_rect: *const fn (?*anyopaque, pos: [2]f64, size: [2]f64, options: RectOptions) void,
+    texture_rect: *const fn (?*anyopaque, dst_area: geometry.AABB(f64), image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: TextureRectOptions) void,
+    fill_rect: *const fn (?*anyopaque, area: geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: FillRectOptions) void,
     line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };
 
@@ -28,17 +28,22 @@ pub fn blit(this: @This(), pos: [2]f64, image: seizer.image.Linear(seizer.color.
     return this.interface.blit(this.ptr, pos, image);
 }
 
-pub const RectOptions = struct {
+pub const TextureRectOptions = struct {
     depth: f64 = 0.5,
     color: seizer.color.argbf32_premultiplied = seizer.color.argbf32_premultiplied.WHITE,
+    src_area: ?geometry.AABB(f64) = null,
 };
 
-pub fn textureRect(this: @This(), dst_pos: [2]f64, dst_size: [2]f64, image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: RectOptions) void {
-    return this.interface.texture_rect(this.ptr, dst_pos, dst_size, image, options);
+pub fn textureRect(this: @This(), dst_rect: geometry.AABB(f64), image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: TextureRectOptions) void {
+    return this.interface.texture_rect(this.ptr, dst_rect, image, options);
 }
 
-pub fn fillRect(this: @This(), pos: [2]f64, rect_size: [2]f64, options: RectOptions) void {
-    return this.interface.fill_rect(this.ptr, pos, rect_size, options);
+pub const FillRectOptions = struct {
+    depth: f64 = 0.5,
+};
+
+pub fn fillRect(this: @This(), area: geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: FillRectOptions) void {
+    return this.interface.fill_rect(this.ptr, area, color, options);
 }
 
 pub const LineOptions = struct {
@@ -57,7 +62,7 @@ pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOpti
 
 pub const NinePatch = struct {
     image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
-    inset: seizer.geometry.Inset(u32),
+    inset: seizer.geometry.Inset(f64),
 
     pub const Options = struct {
         depth: f64 = 0.5,
@@ -65,7 +70,7 @@ pub const NinePatch = struct {
         scale: f64 = 1,
     };
 
-    pub fn init(image: seizer.image.Linear(seizer.color.argbf32_premultiplied), inset: seizer.geometry.Inset(u32)) NinePatch {
+    pub fn init(image: seizer.image.Linear(seizer.color.argbf32_premultiplied), inset: seizer.geometry.Inset(f64)) NinePatch {
         return .{ .image = image, .inset = inset };
     }
 
@@ -89,29 +94,49 @@ pub const NinePatch = struct {
             this.image.slice(.{ right, bot }, this.inset.max), // bottom right
         };
     }
+
+    pub fn imageAreas(this: @This()) [9]seizer.geometry.AABB(f64) {
+        const image_sizef = [2]f64{ @floatFromInt(this.image.size[0]), @floatFromInt(this.image.size[1]) };
+        const left = this.inset.min[0];
+        const top = this.inset.min[1];
+        const right = image_sizef[0] - this.inset.max[0];
+        const bot = image_sizef[1] - this.inset.max[1];
+        return [9]seizer.geometry.AABB(f64){
+            // Inside first
+            .{ .min = this.inset.min, .max = .{ right, bot } },
+            // Edges second
+            .{ .min = .{ left, 0 }, .max = .{ right, top } }, // top
+            .{ .min = .{ 0, top }, .max = .{ left, bot } }, // left
+            .{ .min = .{ right, top }, .max = .{ image_sizef[0], bot } }, // right
+            .{ .min = .{ left, bot }, .max = .{ right, image_sizef[1] } }, // bottom
+            // Corners third
+            .{ .min = .{ 0, 0 }, .max = .{ left, top } }, // top left
+            .{ .min = .{ right, 0 }, .max = .{ image_sizef[0], top } }, // top right
+            .{ .min = .{ 0, bot }, .max = .{ left, image_sizef[1] } }, // bottom left
+            .{ .min = .{ right, bot }, .max = image_sizef }, // bottom right
+        };
+    }
 };
 
-pub fn ninePatch(this: @This(), pos: [2]f64, ninepatch_size: [2]f64, image: seizer.image.Linear(seizer.color.argbf32_premultiplied), inset: geometry.Inset(u32), options: NinePatch.Options) void {
-    const images = NinePatch.images(.{ .image = image, .inset = inset });
-    const scaled_inset = inset.intToFloat(f64).scale(options.scale);
+pub fn ninePatch(this: @This(), area: geometry.AABB(f64), image: seizer.image.Linear(seizer.color.argbf32_premultiplied), inset: geometry.Inset(f64), options: NinePatch.Options) void {
+    const image_areas = NinePatch.imageAreas(.{ .image = image, .inset = inset });
+    const scaled_inset = inset.scale(options.scale);
 
-    const x: [4]f64 = .{ pos[0], pos[0] + scaled_inset.min[0], pos[0] + ninepatch_size[0] - scaled_inset.min[0], pos[0] + ninepatch_size[0] };
-    const y: [4]f64 = .{ pos[1], pos[1] + scaled_inset.min[1], pos[1] + ninepatch_size[1] - scaled_inset.min[1], pos[1] + ninepatch_size[1] };
-    const w: [3]f64 = .{ x[1] - x[0], x[2] - x[1], x[3] - x[2] };
-    const h: [3]f64 = .{ y[1] - y[0], y[2] - y[1], y[3] - y[2] };
+    const x: [4]f64 = .{ area.min[0], area.min[0] + scaled_inset.min[0], area.max[0] - scaled_inset.min[0], area.max[0] };
+    const y: [4]f64 = .{ area.min[1], area.min[1] + scaled_inset.min[1], area.max[1] - scaled_inset.min[1], area.max[1] };
 
     // Inside first
-    this.textureRect(.{ x[1], y[1] }, .{ w[1], h[1] }, images[0], .{ .depth = options.depth, .color = options.color });
+    this.textureRect(.{ .min = .{ x[1], y[1] }, .max = .{ x[2], y[2] } }, image, .{ .src_area = image_areas[0], .depth = options.depth, .color = options.color });
     // Edges second
-    this.textureRect(.{ x[1], y[0] }, .{ w[1], h[0] }, images[1], .{ .depth = options.depth, .color = options.color }); // top
-    this.textureRect(.{ x[0], y[1] }, .{ w[0], h[1] }, images[2], .{ .depth = options.depth, .color = options.color }); // left
-    this.textureRect(.{ x[2], y[1] }, .{ w[2], h[1] }, images[3], .{ .depth = options.depth, .color = options.color }); // right
-    this.textureRect(.{ x[1], y[2] }, .{ w[1], h[2] }, images[4], .{ .depth = options.depth, .color = options.color }); // bottom
+    this.textureRect(.{ .min = .{ x[1], y[0] }, .max = .{ x[2], y[1] } }, image, .{ .src_area = image_areas[1], .depth = options.depth, .color = options.color }); // top
+    this.textureRect(.{ .min = .{ x[0], y[1] }, .max = .{ x[1], y[2] } }, image, .{ .src_area = image_areas[2], .depth = options.depth, .color = options.color }); // left
+    this.textureRect(.{ .min = .{ x[2], y[1] }, .max = .{ x[3], y[2] } }, image, .{ .src_area = image_areas[3], .depth = options.depth, .color = options.color }); // right
+    this.textureRect(.{ .min = .{ x[1], y[2] }, .max = .{ x[2], y[3] } }, image, .{ .src_area = image_areas[4], .depth = options.depth, .color = options.color }); // bottom
     // Corners third
-    this.textureRect(.{ x[0], y[0] }, .{ w[0], h[0] }, images[5], .{ .depth = options.depth, .color = options.color }); // top left
-    this.textureRect(.{ x[2], y[0] }, .{ w[2], h[0] }, images[6], .{ .depth = options.depth, .color = options.color }); // top right
-    this.textureRect(.{ x[0], y[2] }, .{ w[0], h[2] }, images[7], .{ .depth = options.depth, .color = options.color }); // bottom left
-    this.textureRect(.{ x[2], y[2] }, .{ w[2], h[2] }, images[8], .{ .depth = options.depth, .color = options.color }); // bottom right
+    this.textureRect(.{ .min = .{ x[0], y[0] }, .max = .{ x[1], y[1] } }, image, .{ .src_area = image_areas[5], .depth = options.depth, .color = options.color }); // top left
+    this.textureRect(.{ .min = .{ x[2], y[0] }, .max = .{ x[3], y[0] } }, image, .{ .src_area = image_areas[6], .depth = options.depth, .color = options.color }); // top right
+    this.textureRect(.{ .min = .{ x[0], y[2] }, .max = .{ x[1], y[3] } }, image, .{ .src_area = image_areas[7], .depth = options.depth, .color = options.color }); // bottom left
+    this.textureRect(.{ .min = .{ x[2], y[2] }, .max = .{ x[3], y[3] } }, image, .{ .src_area = image_areas[8], .depth = options.depth, .color = options.color }); // bottom right
 }
 
 pub const TextOptions = struct {
@@ -216,16 +241,17 @@ const WriteGlyphContext = struct {
 
 fn writeGlyph(ctx: WriteGlyphContext, item: Font.TextLayout.Item) void {
     const image = ctx.font.pages.get(item.glyph.page) orelse return;
-    const glyph_image = image.slice(
-        .{ @intFromFloat(item.glyph.pos[0]), @intFromFloat(item.glyph.pos[1]) },
-        .{ @intFromFloat(item.glyph.size[0]), @intFromFloat(item.glyph.size[1]) },
-    );
-    ctx.canvas.interface.texture_rect(
-        ctx.canvas.ptr,
-        item.pos,
-        item.size,
-        glyph_image,
+    ctx.canvas.textureRect(
         .{
+            .min = item.pos,
+            .max = .{
+                item.pos[0] + item.size[0],
+                item.pos[1] + item.size[1],
+            },
+        },
+        image,
+        .{
+            .src_area = seizer.geometry.AABB(f64).fromRect(.{ .pos = item.glyph.pos, .size = item.glyph.size }),
             .color = ctx.options.color,
         },
     );

@@ -75,14 +75,14 @@ fn getMinSize(this: *@This()) [2]f64 {
     };
 }
 
-fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
-    canvas.ninePatch(rect.pos, rect.size, this.style.background_image.image, this.style.background_image.inset, .{
+fn render(this: *@This(), canvas: Canvas, rect: AABB) void {
+    canvas.ninePatch(rect, this.style.background_image.image, this.style.background_image.inset, .{
         .color = this.style.background_color,
     });
 
     _ = canvas.writeText(this.style.text_font, .{
-        rect.pos[0] + this.style.padding.min[0],
-        rect.pos[1] + this.style.padding.min[1],
+        rect.min[0] + this.style.padding.min[0],
+        rect.min[1] + this.style.padding.min[1],
     }, this.text.items, .{
         .scale = this.style.text_scale,
         .color = this.style.text_color,
@@ -92,6 +92,6 @@ fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f64);
+const AABB = seizer.geometry.AABB(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");

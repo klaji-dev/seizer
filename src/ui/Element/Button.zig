@@ -168,24 +168,22 @@ pub fn getMinSize(this: *@This()) [2]f64 {
     };
 }
 
-fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
+fn render(this: *@This(), canvas: Canvas, rect: AABB) void {
     const is_pressed = if (this.stage.pointer_capture_element) |pce| pce.ptr == this.element().ptr else false;
     const is_hovered = if (this.stage.hovered_element) |hovered| hovered.ptr == this.element().ptr else false;
     const style = if (is_pressed) this.clicked_style else if (is_hovered) this.hovered_style else this.default_style;
 
     if (style.background_ninepatch) |ninepatch| {
-        canvas.ninePatch(rect.pos, rect.size, ninepatch.image, ninepatch.inset, .{
+        canvas.ninePatch(rect, ninepatch.image, ninepatch.inset, .{
             .color = style.background_color,
         });
     } else {
-        canvas.fillRect(rect.pos, rect.size, .{
-            .color = style.background_color,
-        });
+        canvas.fillRect(rect, style.background_color, .{});
     }
 
     _ = canvas.writeText(style.text_font, .{
-        rect.pos[0] + style.padding.min[0],
-        rect.pos[1] + style.padding.min[1],
+        rect.min[0] + style.padding.min[0],
+        rect.min[1] + style.padding.min[1],
     }, this.text.items, .{
         .scale = style.text_scale,
         .color = style.text_color,
@@ -195,6 +193,6 @@ fn render(this: *@This(), canvas: Canvas, rect: Rect) void {
 const seizer = @import("../../seizer.zig");
 const ui = seizer.ui;
 const Element = ui.Element;
-const Rect = seizer.geometry.Rect(f64);
+const AABB = seizer.geometry.AABB(f64);
 const Canvas = seizer.Canvas;
 const std = @import("std");
