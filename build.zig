@@ -163,7 +163,7 @@ pub fn build(b: *Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    module_test_exe.root_module.addImport("seizer", module);
+    module_test_exe.root_module.addImport("zigimg", zigimg_dep.module("zigimg"));
     const run_module_test_exe = b.addRunArtifact(module_test_exe);
 
     const test_step = b.step("test", "Run seizer module tests");

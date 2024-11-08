@@ -36,7 +36,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.textureRect(
         .{
             .min = .{ 50, 50 },
-            .max = .{ @max(canvas.size()[0] - 100, 0), @max(canvas.size()[1] - 100, 0) },
+            .max = .{ @max(canvas.size()[0] - 50, 0), @max(canvas.size()[1] - 50, 0) },
         },
         image,
         .{},

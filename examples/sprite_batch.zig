@@ -102,7 +102,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     }
 
     spawn_timer -|= 1;
-    if (spawn_timer <= 1) {
+    if (spawn_timer <= 1 and sprites.len < 1) {
         spawn_timer = spawn_timer_duration;
 
         const world_size = [2]f64{
@@ -134,6 +134,11 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     for (sprites.items(.pos), sprites.items(.size)) |pos, size| {
+        canvas.fillRect(
+            .{ .min = pos, .max = .{ pos[0] + size[0], pos[1] + size[1] } },
+            seizer.color.argbf32_premultiplied.TRANSPARENT,
+            .{},
+        );
         canvas.textureRect(
             .{ .min = pos, .max = .{ pos[0] + size[0], pos[1] + size[1] } },
             player_image,

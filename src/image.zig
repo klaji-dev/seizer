@@ -1,11 +1,7 @@
 pub fn Linear(Pixel: type) type {
-    // std.debug.assert(@hasDecl(Pixel, "fromArgb8888"));
-    // std.debug.assert(@hasDecl(Pixel, "toArgb8888"));
-    // std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
     return struct {
         pixels: [*]Pixel,
         size: [2]u32,
-        stride: u32,
 
         pub fn alloc(allocator: std.mem.Allocator, size: [2]u32) !@This() {
             const pixels = try allocator.alloc(Pixel, size[0] * size[1]);
@@ -13,13 +9,11 @@ pub fn Linear(Pixel: type) type {
 
             return .{
                 .size = size,
-                .stride = size[0],
                 .pixels = pixels.ptr,
             };
         }
 
         pub fn clear(this: @This(), pixel: Pixel) void {
-            std.debug.assert(this.size[0] == this.stride);
             @memset(this.pixels[0 .. this.size[0] * this.size[1]], pixel);
         }
 
@@ -44,7 +38,6 @@ pub fn Linear(Pixel: type) type {
 
             return .{
                 .size = .{ @intCast(img.width), @intCast(img.height) },
-                .stride = @intCast(img.width),
                 .pixels = pixels.ptr,
             };
         }
@@ -61,6 +54,38 @@ pub fn Linear(Pixel: type) type {
                 .pixels = pixels.ptr,
             };
         }
+
+        pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) Slice(Pixel) {
+            std.debug.assert(offset[0] <= this.size[0] and offset[1] <= this.size[1]);
+            std.debug.assert(offset[0] + size[0] <= this.size[0] and offset[1] + size[1] <= this.size[1]);
+
+            const raw_pixels = this.pixels[0 .. this.size[0] * this.size[1]];
+            const sub_pixels = raw_pixels[offset[1] * this.size[0] + offset[0] ..];
+
+            return .{
+                .size = size,
+                .stride = this.size[0],
+                .pixels = sub_pixels.ptr,
+            };
+        }
+
+        pub fn setPixel(this: @This(), pos: [2]u32, color: Pixel) void {
+            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
+            this.pixels[pos[1] * this.size[0] + pos[0]] = color;
+        }
+
+        pub fn getPixel(this: @This(), pos: [2]u32) Pixel {
+            std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
+            return this.pixels[pos[1] * this.size[0] + pos[0]];
+        }
+    };
+}
+
+pub fn Slice(Pixel: type) type {
+    return struct {
+        pixels: [*]Pixel,
+        size: [2]u32,
+        stride: u32,
 
         pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) @This() {
             std.debug.assert(offset[0] <= this.size[0] and offset[1] <= this.size[1]);
@@ -270,17 +295,16 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         tiles: [*]Tile,
         /// The size of the Tiled image, in pixels.
         size_px: [2]u32,
-        /// The offset into the Tiled image this slice starts at
-        start_px: [2]u32,
-        /// The offset into the Tiled image this slice ends at. Must be > start_px
-        end_px: [2]u32,
 
         pub const Tile = [tile_size[1]][tile_size[0]]Pixel;
 
         pub const TILE_SIZE = tile_size;
 
         pub fn alloc(allocator: std.mem.Allocator, size_px: [2]u32) !@This() {
-            const size_in_tiles = sizeInTiles(size_px);
+            const size_in_tiles = .{
+                (size_px[0] + (tile_size[0] - 1)) / tile_size[0],
+                (size_px[1] + (tile_size[1] - 1)) / tile_size[1],
+            };
 
             const tiles = try allocator.alloc(Tile, size_in_tiles[0] * size_in_tiles[1]);
             errdefer allocator.free(tiles);
@@ -288,55 +312,48 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             return .{
                 .tiles = tiles.ptr,
                 .size_px = size_px,
-                .start_px = .{ 0, 0 },
-                .end_px = size_px,
             };
         }
 
         pub fn ensureSize(this: *@This(), allocator: std.mem.Allocator, new_size_px: [2]u32) !void {
-            const new_size_tiles = sizeInTiles(new_size_px);
+            const new_size_tiles = .{
+                (new_size_px[0] + (tile_size[0] - 1)) / tile_size[0],
+                (new_size_px[1] + (tile_size[1] - 1)) / tile_size[1],
+            };
 
             if (this.size_px[0] == 0 and this.size_px[1] == 0) {
                 const new_tiles = try allocator.alloc(Tile, new_size_tiles[0] * new_size_tiles[1]);
                 this.tiles = new_tiles.ptr;
                 this.size_px = new_size_px;
-                this.start_px = .{ 0, 0 };
-                this.end_px = new_size_px;
-                const bounds = geometry.AABB(u32).init(.{ this.start_px, this.end_px });
-                this.clear(bounds, .{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
                 return;
             }
 
             if (new_size_px[0] <= this.size_px[0] and new_size_px[1] <= this.size_px[1]) return;
-            const size_tiles = sizeInTiles(this.size_px);
+            const size_tiles = this.sizeInTiles();
 
             const tiles = this.tiles[0 .. size_tiles[0] * size_tiles[1]];
             const new_tiles = try allocator.realloc(tiles, new_size_tiles[0] * new_size_tiles[1]);
 
             this.tiles = new_tiles.ptr;
             this.size_px = new_size_px;
-            this.start_px = .{ 0, 0 };
-            this.end_px = new_size_px;
-            const bounds = geometry.AABB(u32).init(.{ this.start_px, this.end_px });
-            this.clear(bounds, .{ .min = this.start_px, .max = this.end_px }, Pixel.BLACK);
         }
 
         pub fn free(this: @This(), allocator: std.mem.Allocator) void {
             if (this.size_px[0] == 0 and this.size_px[1] == 0) return;
-            const size_in_tiles = sizeInTiles(this.size_px);
+            const size_in_tiles = this.sizeInTiles();
             allocator.free(this.tiles[0 .. size_in_tiles[0] * size_in_tiles[1]]);
         }
 
-        pub fn clear(this: @This(), clip: geometry.AABB(u32), area: geometry.AABB(u32), pixel: Pixel) void {
-            if (!area.overlaps(clip)) return;
-            const clamped = area.clamp(clip);
+        pub fn set(this: @This(), area: geometry.AABB(u32), pixel: Pixel) void {
+            std.debug.assert(area.max[0] < this.size_px[0]);
+            std.debug.assert(area.max[1] < this.size_px[1]);
 
-            const min_tile_pos = this.tilePosFromOffset(clamped.min);
-            const max_tile_pos = this.tilePosFromOffset(clamped.max);
+            const min_tile_pos = this.tilePosFromOffset(area.min);
+            const max_tile_pos = this.tilePosFromOffset(area.max);
 
-            const size_in_tiles = sizeInTiles(clamped.size());
-            for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1]) |tile_y| {
-                for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0]) |tile_x| {
+            const size_in_tiles = this.sizeInTiles();
+            for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1] + 1) |tile_y| {
+                for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0] + 1) |tile_x| {
                     const tile_index = tile_y * size_in_tiles[0] + tile_x;
                     const tile = &this.tiles[tile_index];
                     if (tile_y != min_tile_pos.tile_pos[1] and
@@ -350,22 +367,32 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                         continue;
                     }
 
-                    const tile_pos_in_px = [2]u32{
+                    const tile_pos_px = [2]u32{
                         @intCast(tile_x * tile_size[0]),
                         @intCast(tile_y * tile_size[1]),
                     };
+                    const tile_bounds_px = seizer.geometry.AABB(u32){
+                        .min = tile_pos_px,
+                        .max = .{
+                            tile_pos_px[0] + tile_size[0] - 1,
+                            tile_pos_px[1] + tile_size[1] - 1,
+                        },
+                    };
+
+                    const min_pos = tile_bounds_px.pointClamp(area.min);
+                    const max_pos = tile_bounds_px.pointClamp(area.max);
 
                     const min_in_tile = [2]u32{
-                        this.start_px[0] -| tile_pos_in_px[0],
-                        this.start_px[1] -| tile_pos_in_px[1],
+                        min_pos[0] - tile_bounds_px.min[0],
+                        min_pos[1] - tile_bounds_px.min[1],
                     };
                     const max_in_tile = [2]u32{
-                        @min(tile_size[0], (this.end_px[0] -| tile_pos_in_px[0])),
-                        @min(tile_size[1], (this.end_px[1] -| tile_pos_in_px[1])),
+                        max_pos[0] - tile_bounds_px.min[0],
+                        max_pos[1] - tile_bounds_px.min[1],
                     };
 
-                    for (min_in_tile[1]..max_in_tile[1]) |y| {
-                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                    for (min_in_tile[1]..max_in_tile[1] + 1) |y| {
+                        for (min_in_tile[0]..max_in_tile[0] + 1) |x| {
                             tile[y][x] = pixel;
                         }
                     }
@@ -373,84 +400,70 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
-        pub fn sizeInTiles(size_px: [2]u32) [2]u32 {
+        pub fn sizeInTiles(this: @This()) [2]u32 {
             return .{
-                (size_px[0] + (tile_size[0] - 1)) / tile_size[0],
-                (size_px[1] + (tile_size[1] - 1)) / tile_size[1],
+                (this.size_px[0] + (tile_size[0] - 1)) / tile_size[0],
+                (this.size_px[1] + (tile_size[1] - 1)) / tile_size[1],
             };
         }
 
         test sizeInTiles {
-            try std.testing.expectEqual([_]u32{ 1, 1 }, sizeInTiles(.{ 1, 1 }));
-            try std.testing.expectEqual([_]u32{ 1, 1 }, sizeInTiles(.{ 16, 16 }));
-            try std.testing.expectEqual([_]u32{ 4, 4 }, sizeInTiles(.{ 64, 64 }));
-            try std.testing.expectEqual([_]u32{ 3, 3 }, sizeInTiles(.{ 48, 48 }));
-            try std.testing.expectEqual([_]u32{ 3, 3 }, sizeInTiles(.{ 47, 47 }));
-            try std.testing.expectEqual([_]u32{ 3, 3 }, sizeInTiles(.{ 33, 33 }));
+            try std.testing.expectEqual([_]u32{ 1, 1 }, (@This(){ .tiles = undefined, .size_px = .{ 1, 1 } }).sizeInTiles());
+            try std.testing.expectEqual([_]u32{ 1, 1 }, (@This(){ .tiles = undefined, .size_px = .{ 16, 16 } }).sizeInTiles());
+            try std.testing.expectEqual([_]u32{ 4, 4 }, (@This(){ .tiles = undefined, .size_px = .{ 64, 64 } }).sizeInTiles());
+            try std.testing.expectEqual([_]u32{ 3, 3 }, (@This(){ .tiles = undefined, .size_px = .{ 48, 48 } }).sizeInTiles());
+            try std.testing.expectEqual([_]u32{ 3, 3 }, (@This(){ .tiles = undefined, .size_px = .{ 47, 47 } }).sizeInTiles());
+            try std.testing.expectEqual([_]u32{ 3, 3 }, (@This(){ .tiles = undefined, .size_px = .{ 33, 33 } }).sizeInTiles());
         }
 
-        pub fn slice(this: @This(), offset: [2]u32, size: [2]u32) @This() {
-            const new_start = [2]u32{
-                this.start_px[0] + offset[0],
-                this.start_px[1] + offset[1],
-            };
-            const new_end = [2]u32{
-                new_start[0] + size[0],
-                new_start[1] + size[1],
-            };
-            std.debug.assert(new_start[0] <= this.size_px[0] and new_start[1] <= this.size_px[1]);
-            std.debug.assert(new_end[0] <= this.size_px[0] and new_end[1] <= this.size_px[1]);
-
-            return .{
-                .tiles = this.tiles,
-                .size_px = this.size_px,
-                .start_px = new_start,
-                .end_px = new_end,
-            };
-        }
-
-        pub fn compositeLinear(dst: @This(), src: Linear(Pixel)) void {
-            const dst_size = [2]u32{
-                dst.end_px[0] - dst.start_px[0],
-                dst.end_px[1] - dst.start_px[1],
-            };
-            std.debug.assert(dst_size[0] == src.size[0] and dst_size[1] == src.size[1]);
+        pub fn compositeLinear(this: @This(), dst: seizer.geometry.AABB(u32), src: Slice(Pixel)) void {
+            std.debug.assert(dst.size()[0] == src.size[0] and dst.size()[1] == src.size[1]);
 
             const min_tile_pos = [2]u32{
-                dst.start_px[0] / tile_size[0],
-                dst.start_px[1] / tile_size[1],
+                dst.min[0] / tile_size[0],
+                dst.min[1] / tile_size[1],
             };
             const max_tile_pos = [2]u32{
-                (dst.end_px[0] + (tile_size[0] - 1)) / tile_size[0],
-                (dst.end_px[1] + (tile_size[1] - 1)) / tile_size[1],
+                dst.max[0] / tile_size[0],
+                dst.max[1] / tile_size[1],
             };
 
-            const size_in_tiles = sizeInTiles(dst.size_px);
+            const size_in_tiles = this.sizeInTiles();
 
-            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
-                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
+            for (min_tile_pos[1]..max_tile_pos[1] + 1) |tile_y| {
+                for (min_tile_pos[0]..max_tile_pos[0] + 1) |tile_x| {
                     const tile_index = tile_y * size_in_tiles[0] + tile_x;
-                    const tile = &dst.tiles[tile_index];
+                    const tile = &this.tiles[tile_index];
 
-                    const tile_pos_in_px = [2]u32{
+                    const tile_pos_px = [2]u32{
                         @intCast(tile_x * tile_size[0]),
                         @intCast(tile_y * tile_size[1]),
                     };
+                    const tile_bounds_px = seizer.geometry.AABB(u32){
+                        .min = tile_pos_px,
+                        .max = .{
+                            tile_pos_px[0] + tile_size[0] - 1,
+                            tile_pos_px[1] + tile_size[1] - 1,
+                        },
+                    };
+
+                    const min_pos = tile_bounds_px.pointClamp(dst.min);
+                    const max_pos = tile_bounds_px.pointClamp(dst.max);
 
                     const min_in_tile = [2]u32{
-                        dst.start_px[0] -| tile_pos_in_px[0],
-                        dst.start_px[1] -| tile_pos_in_px[1],
+                        min_pos[0] - tile_bounds_px.min[0],
+                        min_pos[1] - tile_bounds_px.min[1],
                     };
                     const max_in_tile = [2]u32{
-                        @min(tile_size[0], (dst.end_px[0] -| tile_pos_in_px[0])),
-                        @min(tile_size[1], (dst.end_px[1] -| tile_pos_in_px[1])),
+                        max_pos[0] - tile_bounds_px.min[0],
+                        max_pos[1] - tile_bounds_px.min[1],
                     };
 
-                    for (min_in_tile[1]..max_in_tile[1]) |y| {
-                        for (min_in_tile[0]..max_in_tile[0]) |x| {
+                    for (min_in_tile[1]..max_in_tile[1] + 1) |y| {
+                        for (min_in_tile[0]..max_in_tile[0] + 1) |x| {
                             const src_pos: [2]u32 = .{
-                                @intCast(tile_pos_in_px[0] + x - dst.start_px[0]),
-                                @intCast(tile_pos_in_px[1] + y - dst.start_px[1]),
+                                @intCast(tile_pos_px[0] + x - dst.min[0]),
+                                @intCast(tile_pos_px[1] + y - dst.min[1]),
                             };
                             tile[y][x] = Pixel.compositeSrcOver(tile[y][x], src.getPixel(src_pos));
                         }
@@ -460,70 +473,80 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         }
 
         pub fn compositeSampler(
-            dst: @This(),
+            this: @This(),
+            dst: seizer.geometry.AABB(u32),
             comptime SamplerContext: type,
-            comptime sample_fn: fn (SamplerContext, pos: [2]u32, sample_rect: Linear(Pixel)) void,
+            comptime sample_fn: fn (SamplerContext, min: [2]f64, max: [2]f64, sample_rect: Linear(Pixel)) void,
             sampler_context: SamplerContext,
         ) void {
             const min_tile_pos = [2]u32{
-                dst.start_px[0] / tile_size[0],
-                dst.start_px[1] / tile_size[1],
+                dst.min[0] / tile_size[0],
+                dst.min[1] / tile_size[1],
             };
             const max_tile_pos = [2]u32{
-                (dst.end_px[0] + (tile_size[0] - 1)) / tile_size[0],
-                (dst.end_px[1] + (tile_size[1] - 1)) / tile_size[1],
+                dst.max[0] / tile_size[0],
+                dst.max[1] / tile_size[1],
             };
 
-            const size_in_tiles = sizeInTiles(dst.size_px);
+            const dst_sizef = dst.into(f64).size();
+
+            const size_in_tiles = this.sizeInTiles();
 
             var sample_rect_pixel_buffer: [@as(u32, tile_size[0]) * tile_size[1]]Pixel = undefined;
+            const sample_rect = Linear(Pixel){
+                .pixels = &sample_rect_pixel_buffer,
+                .size = .{ tile_size[0], tile_size[1] },
+            };
 
-            for (min_tile_pos[1]..max_tile_pos[1]) |tile_y| {
-                for (min_tile_pos[0]..max_tile_pos[0]) |tile_x| {
+            for (min_tile_pos[1]..max_tile_pos[1] + 1) |tile_y| {
+                for (min_tile_pos[0]..max_tile_pos[0] + 1) |tile_x| {
                     const tile_index = tile_y * size_in_tiles[0] + tile_x;
-                    const tile = &dst.tiles[tile_index];
+                    const tile = &this.tiles[tile_index];
 
-                    const tile_pos_in_px = [2]u32{
+                    const tile_pos_px = [2]u32{
                         @intCast(tile_x * tile_size[0]),
                         @intCast(tile_y * tile_size[1]),
                     };
+                    const tile_bounds_px = seizer.geometry.AABB(u32){
+                        .min = tile_pos_px,
+                        .max = .{
+                            tile_pos_px[0] + tile_size[0] - 1,
+                            tile_pos_px[1] + tile_size[1] - 1,
+                        },
+                    };
+
+                    const min_pos = tile_bounds_px.pointClamp(dst.min);
+                    const max_pos = tile_bounds_px.pointClamp(dst.max);
 
                     const min_in_tile = [2]u32{
-                        dst.start_px[0] -| tile_pos_in_px[0],
-                        dst.start_px[1] -| tile_pos_in_px[1],
+                        min_pos[0] - tile_bounds_px.min[0],
+                        min_pos[1] - tile_bounds_px.min[1],
                     };
                     const max_in_tile = [2]u32{
-                        @min(tile_size[0], (dst.end_px[0] -| tile_pos_in_px[0])),
-                        @min(tile_size[1], (dst.end_px[1] -| tile_pos_in_px[1])),
-                    };
-
-                    const sample_size = .{
-                        max_in_tile[0] - min_in_tile[0],
-                        max_in_tile[1] - min_in_tile[1],
-                    };
-
-                    const sample_rect = Linear(Pixel){
-                        .pixels = &sample_rect_pixel_buffer,
-                        .size = sample_size,
-                        // TODO: contiguous image type?
-                        .stride = sample_size[0],
+                        max_pos[0] - tile_bounds_px.min[0],
+                        max_pos[1] - tile_bounds_px.min[1],
                     };
 
                     // get the pixels we'll need to render
+                    sample_rect.clear(seizer.color.argbf32_premultiplied.TRANSPARENT);
                     sample_fn(
                         sampler_context,
                         .{
-                            tile_pos_in_px[0] + min_in_tile[0] - dst.start_px[0],
-                            tile_pos_in_px[1] + min_in_tile[1] - dst.start_px[1],
+                            (@as(f64, @floatFromInt(tile_pos_px[0])) - dst.into(f64).min[0]) / dst_sizef[0],
+                            (@as(f64, @floatFromInt(tile_pos_px[1])) - dst.into(f64).min[1]) / dst_sizef[1],
+                        },
+                        .{
+                            (@as(f64, @floatFromInt(tile_pos_px[0] + tile_size[0] - 1)) - dst.into(f64).min[0]) / dst_sizef[0],
+                            (@as(f64, @floatFromInt(tile_pos_px[1] + tile_size[1] - 1)) - dst.into(f64).min[1]) / dst_sizef[1],
                         },
                         sample_rect,
                     );
 
-                    for (min_in_tile[1]..max_in_tile[1], 0..) |y, sample_y| {
-                        for (min_in_tile[0]..max_in_tile[0], 0..) |x, sample_x| {
+                    for (min_in_tile[1]..max_in_tile[1] + 1) |y| {
+                        for (min_in_tile[0]..max_in_tile[0] + 1) |x| {
                             tile[y][x] = Pixel.compositeSrcOver(
                                 tile[y][x],
-                                sample_rect.getPixel(.{ @intCast(sample_x), @intCast(sample_y) }),
+                                sample_rect.getPixel(.{ @intCast(x), @intCast(y) }),
                             );
                         }
                     }
@@ -531,12 +554,11 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             }
         }
 
-        pub fn drawFillRect(this: @This(), areaf: geometry.AABB(f64), color: Pixel) void {
-            const area = areaf.into(u32);
+        pub fn drawFillRect(this: @This(), area: geometry.AABB(u32), color: Pixel) void {
             const min_tile_pos = this.tilePosFromOffset(area.min);
             const max_tile_pos = this.tilePosFromOffset(area.max);
 
-            const size_in_tiles = sizeInTiles(this.size_px);
+            const size_in_tiles = this.sizeInTiles();
 
             for (min_tile_pos.tile_pos[1]..max_tile_pos.tile_pos[1] + 1) |tile_y| {
                 for (min_tile_pos.tile_pos[0]..max_tile_pos.tile_pos[0] + 1) |tile_x| {
@@ -593,8 +615,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
             const overlapf = area_line.clamp(clip.into(f32));
             const overlap = overlapf.into(u32);
 
-            for (overlap.min[1]..overlap.max[1]) |y| {
-                for (overlap.min[0]..overlap.max[0]) |x| {
+            for (overlap.min[1]..overlap.max[1] + 1) |y| {
+                for (overlap.min[0]..overlap.max[0] + 1) |x| {
                     const capsule, const h = capsuleSDF(.{ @floatFromInt(x), @floatFromInt(y) }, a, b, r);
                     const color = colors[0].blend(colors[1], h);
                     const bg = this.getPixel(.{ @intCast(x), @intCast(y) });
@@ -628,19 +650,19 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         };
 
         pub fn tilePosFromOffset(this: @This(), offset: [2]u32) TilePos {
-            std.debug.assert(offset[0] >= 0 and offset[1] >= 0);
-            std.debug.assert(offset[0] <= this.end_px[0] - this.start_px[0]);
-            std.debug.assert(offset[1] <= this.end_px[1] - this.start_px[1]);
+            const bounds = seizer.geometry.AABB(u32).init(.{ .{ 0, 0 }, .{ this.size_px[0] - 1, this.size_px[1] - 1 } });
+            std.debug.assert(bounds.contains(offset));
+
             const pos = [2]u32{
-                @intCast(this.start_px[0] + offset[0]),
-                @intCast(this.start_px[1] + offset[1]),
+                @intCast(offset[0]),
+                @intCast(offset[1]),
             };
 
             const tile_pos = [2]u32{
                 pos[0] / tile_size[0],
                 pos[1] / tile_size[1],
             };
-            const size_in_tiles = sizeInTiles(this.size_px);
+            const size_in_tiles = this.sizeInTiles();
 
             const tile_index = tile_pos[1] * size_in_tiles[0] + tile_pos[0];
 
@@ -658,68 +680,184 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
     };
 }
 
-comptime {
-    _ = Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied);
+/// Accepts any type that has a getPixel function
+pub fn expectEqualImageSections(section: seizer.geometry.AABB(u32), expected: anytype, actual: anytype) !void {
+    const failed = comp_pixels: {
+        for (section.min[1]..section.max[1] + 1) |y| {
+            for (section.min[0]..section.max[0] + 1) |x| {
+                const pos = [2]u32{ @intCast(x), @intCast(y) };
+                if (!std.meta.eql(expected.getPixel(pos), actual.getPixel(pos))) {
+                    break :comp_pixels true;
+                }
+            }
+        }
+        break :comp_pixels false;
+    };
+    if (failed) {
+        try writeTestImagesToTmpDir(section, expected, actual);
+        return error.TestExpectedEqual;
+    }
 }
 
-// test "Tiled ops == Linear ops" {
-//     // TODO: replace with fuzz testing in zig 0.14
-//     var prng = std.Random.DefaultPrng.init(4724468855559179511);
+/// Accepts any type that has a getPixel function
+pub fn writeTestImagesToTmpDir(section: seizer.geometry.AABB(u32), expected: anytype, actual: anytype) !void {
+    const tmp_dir = std.testing.tmpDir(.{});
 
-//     const ITERATIONS = 100;
-//     for (0..ITERATIONS) |_| {
-//         const src_size = [2]u32{
-//             prng.random().uintAtMost(u32, 32) + 1,
-//             prng.random().uintAtMost(u32, 32) + 1,
-//         };
-//         const size = [2]u32{
-//             prng.random().uintLessThan(u32, 128) + src_size[0],
-//             prng.random().uintLessThan(u32, 128) + src_size[1],
-//         };
+    try writeImageToTmpDir(tmp_dir, "actual", section, actual);
+    try writeImageToTmpDir(tmp_dir, "expected", section, expected);
+}
 
-//         const linear = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, size);
-//         defer linear.free(std.testing.allocator);
-//         const tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, size);
-//         defer tiled.free(std.testing.allocator);
+/// Accepts any type that has a getPixel function
+pub fn writeImageToTmpDir(tmp_dir: std.testing.TmpDir, comptime name: []const u8, section: seizer.geometry.AABB(u32), image: anytype) !void {
+    var zigimg_image = try zigimg.Image.create(std.testing.allocator, section.size()[0], section.size()[1], .rgba32);
+    defer zigimg_image.deinit();
 
-//         const clear_color = seizer.color.argbf32_premultiplied.init(
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//             prng.random().float(f32),
-//         ).convertAlphaModelTo(.premultiplied);
+    for (section.min[1]..section.max[1] + 1) |y| {
+        for (section.min[0]..section.max[0] + 1) |x| {
+            const pos = [2]u32{ @intCast(x), @intCast(y) };
+            const index = y * section.size()[0] + x;
 
-//         linear.clear(clear_color);
-//         tiled.clear(clear_color);
+            const actual_pixel = image.getPixel(pos)
+                .convertAlphaModelTo(.straight)
+                .convertColorTo(seizer.color.sRGB8)
+                .convertAlphaTo(u8);
 
-//         const src_linear = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, src_size);
-//         defer src_linear.free(std.testing.allocator);
-//         for (src_linear.pixels[0 .. src_linear.size[0] * src_linear.size[1]]) |*pixel| {
-//             pixel.* = seizer.color.argbf32_premultiplied.init(
-//                 prng.random().float(f32),
-//                 prng.random().float(f32),
-//                 prng.random().float(f32),
-//                 prng.random().float(f32),
-//             ).convertAlphaModelTo(.premultiplied);
-//         }
+            zigimg_image.pixels.rgba32[index] = .{
+                .r = @intFromEnum(actual_pixel.r),
+                .g = @intFromEnum(actual_pixel.g),
+                .b = @intFromEnum(actual_pixel.b),
+                .a = actual_pixel.a,
+            };
+        }
+    }
 
-//         for (0..10) |_| {
-//             const pos = [2]u32{
-//                 prng.random().uintAtMost(u32, size[0] - src_size[0]),
-//                 prng.random().uintAtMost(u32, size[1] - src_size[1]),
-//             };
-//             linear.slice(pos, src_size).composite(src_linear);
-//             tiled.slice(pos, src_size).compositeLinear(src_linear);
-//         }
+    var pathname_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
 
-//         for (0..size[1]) |y| {
-//             for (0..size[0]) |x| {
-//                 const pos = [2]u32{ @intCast(x), @intCast(y) };
-//                 try std.testing.expectEqual(linear.getPixel(pos), tiled.getPixel(pos));
-//             }
-//         }
-//     }
-// }
+    const file = try tmp_dir.dir.createFile(name ++ ".png", .{});
+    zigimg_image.writeToFile(file, .{ .png = .{} }) catch |err| {
+        std.debug.print("Failed to write \"" ++ name ++ ".png\": {}\n", .{err});
+        return;
+    };
+    if (tmp_dir.dir.realpath(name ++ ".png", &pathname_buffer)) |pathname| {
+        std.debug.print("Wrote \"" ++ name ++ ".png\" to \"{}\"\n", .{std.zig.fmtEscapes(pathname)});
+    } else |err| {
+        std.debug.print("Wrote \"" ++ name ++ ".png\" to tmp directory (could not get realpath: {})\n", .{err});
+    }
+}
+
+/// Accepts any type that has a getPixel function
+pub fn expectAllPixelsEqual(comptime name: []const u8, section: seizer.geometry.AABB(u32), expected_pixel: anytype, image: anytype) !void {
+    for (section.min[1]..section.max[1] + 1) |y| {
+        for (section.min[0]..section.max[0] + 1) |x| {
+            const pos = [2]u32{ @intCast(x), @intCast(y) };
+            const actual_pixel = image.getPixel(pos);
+            if (!std.meta.eql(actual_pixel, expected_pixel)) {
+                std.debug.print("Expected entire image to be {}, found {}\n", .{ expected_pixel, actual_pixel });
+
+                const tmp_dir = std.testing.tmpDir(.{});
+                try writeImageToTmpDir(tmp_dir, name, section, image);
+                return error.TestExpectedEqual;
+            }
+        }
+    }
+}
+
+test "Tiled.set(entire image)" {
+    // TODO: use fuzz testing in zig 0.14
+    const tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, .{ 52, 52 });
+    defer tiled.free(std.testing.allocator);
+
+    const image_aabb = seizer.geometry.AABB(u32){
+        .min = .{ 0, 0 },
+        .max = .{ tiled.size_px[0] - 1, tiled.size_px[1] - 1 },
+    };
+
+    tiled.set(image_aabb, seizer.color.argbf32_premultiplied.TRANSPARENT);
+    try expectAllPixelsEqual("TRANSPARENT", image_aabb, seizer.color.argbf32_premultiplied.TRANSPARENT, tiled);
+
+    tiled.set(image_aabb, seizer.color.argbf32_premultiplied.BLACK);
+    try expectAllPixelsEqual("BLACK", image_aabb, seizer.color.argbf32_premultiplied.BLACK, tiled);
+
+    tiled.set(image_aabb, seizer.color.argbf32_premultiplied.WHITE);
+    try expectAllPixelsEqual("WHITE", image_aabb, seizer.color.argbf32_premultiplied.WHITE, tiled);
+}
+
+test "Tiled ops == Linear ops" {
+    // TODO: replace with fuzz testing in zig 0.14
+    var prng = std.Random.DefaultPrng.init(4724468855559179511);
+
+    const ITERATIONS = 100;
+    for (0..ITERATIONS) |_| {
+        const src_size = [2]u32{
+            prng.random().uintAtMost(u32, 32) + 1,
+            prng.random().uintAtMost(u32, 32) + 1,
+        };
+        const size = [2]u32{
+            prng.random().uintLessThan(u32, 128) + src_size[0],
+            prng.random().uintLessThan(u32, 128) + src_size[1],
+        };
+
+        const entire_image_area = seizer.geometry.AABB(u32){
+            .min = .{ 0, 0 },
+            .max = .{
+                size[0] - 1,
+                size[1] - 1,
+            },
+        };
+
+        const src_area = seizer.geometry.AABB(u32){
+            .min = .{ 0, 0 },
+            .max = .{
+                src_size[0] - 1,
+                src_size[1] - 1,
+            },
+        };
+
+        const linear = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, size);
+        defer linear.free(std.testing.allocator);
+        const tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, size);
+        defer tiled.free(std.testing.allocator);
+
+        const clear_color = seizer.color.argb(f32, .straight, f32).init(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        ).convertAlphaModelTo(.premultiplied);
+
+        linear.clear(clear_color);
+        tiled.set(entire_image_area, clear_color);
+
+        try expectEqualImageSections(.{ .min = .{ 0, 0 }, .max = .{ size[0] - 1, size[1] - 1 } }, linear, tiled);
+
+        const src_linear = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, src_size);
+        defer src_linear.free(std.testing.allocator);
+        for (src_linear.pixels[0 .. src_linear.size[0] * src_linear.size[1]]) |*pixel| {
+            pixel.* = seizer.color.argbf32_premultiplied.init(
+                prng.random().float(f32),
+                prng.random().float(f32),
+                prng.random().float(f32),
+                prng.random().float(f32),
+            ).convertAlphaModelTo(.premultiplied);
+        }
+
+        for (0..10) |_| {
+            const pos = [2]u32{
+                prng.random().uintAtMost(u32, size[0] - src_size[0]),
+                prng.random().uintAtMost(u32, size[1] - src_size[1]),
+            };
+            linear.slice(pos, src_size).composite(src_linear.slice(.{ 0, 0 }, src_size));
+            tiled.compositeLinear(src_area.translate(pos), src_linear.slice(.{ 0, 0 }, src_size));
+        }
+
+        try expectEqualImageSections(.{ .min = .{ 0, 0 }, .max = .{ size[0] - 1, size[1] - 1 } }, linear, tiled);
+    }
+}
+
+comptime {
+    _ = Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied);
+    _ = Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).sizeInTiles;
+}
 
 const probes = @import("probes");
 const std = @import("std");

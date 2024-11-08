@@ -136,7 +136,7 @@ fn linearArgbF32Composite(_: std.mem.Allocator) void {
 }
 
 fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
-    dst_tiled_argbf32.clear(.{ .min = .{ 0, 0 }, .max = dst_tiled_argbf32.size_px }, argbf32_premultiplied.BLACK);
+    dst_tiled_argbf32.set(.{ .min = .{ 0, 0 }, .max = dst_tiled_argbf32.size_px }, argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
         dst_tiled_argbf32.slice(pos, src_linear_argbf32.size).compositeLinear(src_linear_argbf32);
     }
