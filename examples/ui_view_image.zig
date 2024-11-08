@@ -72,10 +72,10 @@ pub fn init() !void {
     const pan_zoom_flexbox = try seizer.ui.Element.FlexBox.create(_stage);
     defer pan_zoom_flexbox.element().release();
 
-    const character_image_element = try seizer.ui.Element.Image.create(_stage, character_image);
+    const character_image_element = try seizer.ui.Element.Image.create(_stage, character_image.asSlice());
     defer character_image_element.element().release();
 
-    const image_element = try seizer.ui.Element.Image.create(_stage, ui_image);
+    const image_element = try seizer.ui.Element.Image.create(_stage, ui_image.asSlice());
     defer image_element.element().release();
 
     const hello_button = try seizer.ui.Element.Button.create(_stage, "Hello");

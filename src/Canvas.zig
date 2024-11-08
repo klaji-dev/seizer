@@ -10,8 +10,8 @@ pub const Interface = struct {
     /// The size of the renderable area
     size: *const fn (?*anyopaque) [2]f64,
     clear: *const fn (?*anyopaque, seizer.color.argbf32_premultiplied) void,
-    blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void,
-    texture_rect: *const fn (?*anyopaque, dst_area: geometry.AABB(f64), image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: TextureRectOptions) void,
+    blit: *const fn (?*anyopaque, pos: [2]f64, image: seizer.image.Slice(seizer.color.argbf32_premultiplied)) void,
+    texture_rect: *const fn (?*anyopaque, dst_area: geometry.AABB(f64), image: seizer.image.Slice(seizer.color.argbf32_premultiplied), options: TextureRectOptions) void,
     fill_rect: *const fn (?*anyopaque, area: geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: FillRectOptions) void,
     line: *const fn (?*anyopaque, start: [2]f64, end: [2]f64, options: LineOptions) void,
 };
@@ -24,7 +24,7 @@ pub fn clear(this: @This(), color: seizer.color.argbf32_premultiplied) void {
     return this.interface.clear(this.ptr, color);
 }
 
-pub fn blit(this: @This(), pos: [2]f64, image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void {
+pub fn blit(this: @This(), pos: [2]f64, image: seizer.image.Slice(seizer.color.argbf32_premultiplied)) void {
     return this.interface.blit(this.ptr, pos, image);
 }
 
@@ -34,7 +34,7 @@ pub const TextureRectOptions = struct {
     src_area: ?geometry.AABB(f64) = null,
 };
 
-pub fn textureRect(this: @This(), dst_rect: geometry.AABB(f64), image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: TextureRectOptions) void {
+pub fn textureRect(this: @This(), dst_rect: geometry.AABB(f64), image: seizer.image.Slice(seizer.color.argbf32_premultiplied), options: TextureRectOptions) void {
     return this.interface.texture_rect(this.ptr, dst_rect, image, options);
 }
 
@@ -61,7 +61,7 @@ pub fn line(this: @This(), start_pos: [2]f64, end_pos: [2]f64, options: LineOpti
 // Stuff that is implemented on top of the base functions
 
 pub const NinePatch = struct {
-    image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
+    image: seizer.image.Slice(seizer.color.argbf32_premultiplied),
     inset: seizer.geometry.Inset(f64),
 
     pub const Options = struct {
@@ -70,11 +70,11 @@ pub const NinePatch = struct {
         scale: f64 = 1,
     };
 
-    pub fn init(image: seizer.image.Linear(seizer.color.argbf32_premultiplied), inset: seizer.geometry.Inset(f64)) NinePatch {
+    pub fn init(image: seizer.image.Slice(seizer.color.argbf32_premultiplied), inset: seizer.geometry.Inset(f64)) NinePatch {
         return .{ .image = image, .inset = inset };
     }
 
-    pub fn images(this: @This()) [9]seizer.image.Linear(seizer.color.argbf32_premultiplied) {
+    pub fn images(this: @This()) [9]seizer.image.Slice(seizer.color.argbf32_premultiplied) {
         const left = this.inset.min[0];
         const top = this.inset.min[1];
         const right = this.image.size[0] - this.inset.max[0];
@@ -118,7 +118,7 @@ pub const NinePatch = struct {
     }
 };
 
-pub fn ninePatch(this: @This(), area: geometry.AABB(f64), image: seizer.image.Linear(seizer.color.argbf32_premultiplied), inset: geometry.Inset(f64), options: NinePatch.Options) void {
+pub fn ninePatch(this: @This(), area: geometry.AABB(f64), image: seizer.image.Slice(seizer.color.argbf32_premultiplied), inset: geometry.Inset(f64), options: NinePatch.Options) void {
     const image_areas = NinePatch.imageAreas(.{ .image = image, .inset = inset });
     const scaled_inset = inset.scale(options.scale);
 
@@ -249,7 +249,7 @@ fn writeGlyph(ctx: WriteGlyphContext, item: Font.TextLayout.Item) void {
                 item.pos[1] + item.size[1],
             },
         },
-        image,
+        image.slice(.{ 0, 0 }, image.size),
         .{
             .src_area = seizer.geometry.AABB(f64).fromRect(.{ .pos = item.glyph.pos, .size = item.glyph.size }),
             .color = ctx.options.color,

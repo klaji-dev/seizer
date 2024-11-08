@@ -199,10 +199,24 @@ pub fn AABB(comptime T: type) type {
             return this.max;
         }
 
+        /// Gets the size as (max - min)
         pub fn size(this: @This()) [2]T {
             return [2]T{
-                this.max[0] - this.min[0] + 1,
-                this.max[1] - this.min[1] + 1,
+                this.max[0] - this.min[0],
+                this.max[1] - this.min[1],
+            };
+        }
+
+        /// Gets the size as (max - min) + the smallest value the child type can represent (e.g. 1 for integer, `std.math.epsilon()` for floats)
+        pub fn sizePlusEpsilon(this: @This()) [2]T {
+            const MAX = switch (@typeInfo(T)) {
+                .Int => std.math.maxInt(T),
+                .Float => std.math.inf(T),
+                else => @compileError("unsupported type " ++ @typeName(T)),
+            };
+            return .{
+                std.math.nextAfter(T, this.max[0] - this.min[0], MAX),
+                std.math.nextAfter(T, this.max[1] - this.min[1], MAX),
             };
         }
 

@@ -141,7 +141,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
         );
         canvas.textureRect(
             .{ .min = pos, .max = .{ pos[0] + size[0], pos[1] + size[1] } },
-            player_image,
+            player_image.asSlice(),
             .{},
         );
     }

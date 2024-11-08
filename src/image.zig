@@ -69,6 +69,14 @@ pub fn Linear(Pixel: type) type {
             };
         }
 
+        pub fn asSlice(this: @This()) Slice(Pixel) {
+            return .{
+                .pixels = this.pixels,
+                .size = this.size,
+                .stride = this.size[0],
+            };
+        }
+
         pub fn setPixel(this: @This(), pos: [2]u32, color: Pixel) void {
             std.debug.assert(pos[0] < this.size[0] and pos[1] < this.size[1]);
             this.pixels[pos[1] * this.size[0] + pos[0]] = color;
@@ -121,6 +129,67 @@ pub fn Slice(Pixel: type) type {
                     dst_argb.* = Pixel.compositeSrcOver(dst_argb.*, src_argb);
                 }
             }
+        }
+
+        pub fn compositeSampler(
+            dst: @This(),
+            F: type,
+            src_area: seizer.geometry.AABB(F),
+            comptime SamplerContext: type,
+            comptime sample_fn: fn (SamplerContext, pos: [2]F) Pixel,
+            sampler_context: SamplerContext,
+        ) void {
+            const sample_stride = [2]F{
+                (src_area.size()[0]) / @as(F, @floatFromInt(dst.size[0] - 1)),
+                (src_area.size()[1]) / @as(F, @floatFromInt(dst.size[1] - 1)),
+            };
+            var sample_pos: [2]F = src_area.min;
+            for (0..dst.size[1]) |y| {
+                sample_pos[0] = src_area.min[0];
+
+                const dst_row = dst.pixels[y * dst.stride ..][0..dst.size[0]];
+                for (dst_row) |*dst_argb| {
+                    dst_argb.* = Pixel.compositeSrcOver(dst_argb.*, sample_fn(sampler_context, sample_pos));
+
+                    sample_pos[0] += sample_stride[0];
+                }
+
+                sample_pos[1] += sample_stride[1];
+            }
+        }
+
+        test compositeSampler {
+            var linear = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, .{ 5, 5 });
+            defer linear.free(std.testing.allocator);
+            const dst_slice = linear.slice(.{ 0, 0 }, linear.size);
+
+            const RGGradientSampler = struct {
+                pub fn sample(this: @This(), pos: [2]f64) seizer.color.argbf32_premultiplied {
+                    _ = this;
+                    return seizer.color.argbf32_premultiplied.init(
+                        0,
+                        @floatCast(pos[1]),
+                        @floatCast(pos[0]),
+                        1,
+                    );
+                }
+            };
+            dst_slice.compositeSampler(f64, .{ .min = .{ 0, 0 }, .max = .{ 1, 1 } }, RGGradientSampler, RGGradientSampler.sample, .{});
+
+            const ARGB = seizer.color.argbf32_premultiplied;
+            var expected_buffer = [5][5]seizer.color.argbf32_premultiplied{
+                .{ ARGB.init(0, 0.00, 0.00, 1), ARGB.init(0, 0.00, 0.25, 1), ARGB.init(0, 0.00, 0.50, 1), ARGB.init(0, 0.00, 0.75, 1), ARGB.init(0, 0.00, 1.00, 1) },
+                .{ ARGB.init(0, 0.25, 0.00, 1), ARGB.init(0, 0.25, 0.25, 1), ARGB.init(0, 0.25, 0.50, 1), ARGB.init(0, 0.25, 0.75, 1), ARGB.init(0, 0.25, 1.00, 1) },
+                .{ ARGB.init(0, 0.50, 0.00, 1), ARGB.init(0, 0.50, 0.25, 1), ARGB.init(0, 0.50, 0.50, 1), ARGB.init(0, 0.50, 0.75, 1), ARGB.init(0, 0.50, 1.00, 1) },
+                .{ ARGB.init(0, 0.75, 0.00, 1), ARGB.init(0, 0.75, 0.25, 1), ARGB.init(0, 0.75, 0.50, 1), ARGB.init(0, 0.75, 0.75, 1), ARGB.init(0, 0.75, 1.00, 1) },
+                .{ ARGB.init(0, 1.00, 0.00, 1), ARGB.init(0, 1.00, 0.25, 1), ARGB.init(0, 1.00, 0.50, 1), ARGB.init(0, 1.00, 0.75, 1), ARGB.init(0, 1.00, 1.00, 1) },
+            };
+            const expected_image = Linear(seizer.color.argbf32_premultiplied){
+                .pixels = expected_buffer[0][0..],
+                .size = .{ expected_buffer[0].len, expected_buffer.len },
+            };
+
+            try expectEqualImageSections(.{ .min = .{ 0, 0 }, .max = .{ 4, 4 } }, expected_image, linear);
         }
 
         pub fn drawFillRect(this: @This(), a: [2]i32, b: [2]i32, color: Pixel) void {
@@ -417,7 +486,7 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         }
 
         pub fn compositeLinear(this: @This(), dst: seizer.geometry.AABB(u32), src: Slice(Pixel)) void {
-            std.debug.assert(dst.size()[0] == src.size[0] and dst.size()[1] == src.size[1]);
+            std.debug.assert(dst.sizePlusEpsilon()[0] == src.size[0] and dst.sizePlusEpsilon()[1] == src.size[1]);
 
             const min_tile_pos = [2]u32{
                 dst.min[0] / tile_size[0],
@@ -857,6 +926,7 @@ test "Tiled ops == Linear ops" {
 comptime {
     _ = Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied);
     _ = Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).sizeInTiles;
+    _ = Slice(seizer.color.argbf32_premultiplied);
 }
 
 const probes = @import("probes");

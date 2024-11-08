@@ -130,7 +130,7 @@ pub fn main() !void {
 fn linearArgbF32Composite(_: std.mem.Allocator) void {
     dst_linear_argbf32.clear(argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
-        dst_linear_argbf32.slice(pos, src_linear_argbf32.size).composite(src_linear_argbf32);
+        dst_linear_argbf32.slice(pos, src_linear_argbf32.size).composite(src_linear_argbf32.asSlice());
     }
     std.mem.doNotOptimizeAway(dst_linear_argbf32.pixels);
 }
@@ -138,7 +138,14 @@ fn linearArgbF32Composite(_: std.mem.Allocator) void {
 fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
     dst_tiled_argbf32.set(.{ .min = .{ 0, 0 }, .max = dst_tiled_argbf32.size_px }, argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
-        dst_tiled_argbf32.slice(pos, src_linear_argbf32.size).compositeLinear(src_linear_argbf32);
+        const dst_area = seizer.geometry.AABB(u32){
+            .min = pos,
+            .max = .{
+                pos[0] + src_linear_argbf32.size[0],
+                pos[1] + src_linear_argbf32.size[1],
+            },
+        };
+        dst_tiled_argbf32.compositeLinear(dst_area, src_linear_argbf32.asSlice());
     }
     std.mem.doNotOptimizeAway(dst_tiled_argbf32.tiles);
 }

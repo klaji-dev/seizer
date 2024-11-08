@@ -20,11 +20,11 @@ pub fn init() !void {
 
     bicubic_upscale = try seizer.image.Linear(seizer.color.argbf32_premultiplied).alloc(gpa.allocator(), .{ 5 * image.size[0], 5 * image.size[1] });
     errdefer bicubic_upscale.free(gpa.allocator());
-    bicubic_upscale.resize(image);
+    bicubic_upscale.asSlice().resize(image.asSlice());
 
     bicubic_downscale = try seizer.image.Linear(seizer.color.argbf32_premultiplied).alloc(gpa.allocator(), .{ image.size[0] / 2, image.size[1] / 2 });
     errdefer bicubic_downscale.free(gpa.allocator());
-    bicubic_downscale.resize(image);
+    bicubic_downscale.asSlice().resize(image.asSlice());
 
     seizer.setDeinit(deinit);
 }
@@ -51,9 +51,9 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
         sizef[1] * 2.0 / 3.0,
         sizef[1],
     };
-    canvas.textureRect(.{ .min = .{ 0, y[0] }, .max = .{ sizef[0], y[1] } }, bicubic_downscale, .{});
-    canvas.textureRect(.{ .min = .{ 0, y[1] }, .max = .{ sizef[0], y[2] } }, image, .{});
-    canvas.textureRect(.{ .min = .{ 0, y[2] }, .max = .{ sizef[0], y[3] } }, bicubic_upscale, .{});
+    canvas.textureRect(.{ .min = .{ 0, y[0] }, .max = .{ sizef[0], y[1] } }, bicubic_downscale.asSlice(), .{});
+    canvas.textureRect(.{ .min = .{ 0, y[1] }, .max = .{ sizef[0], y[2] } }, image.asSlice(), .{});
+    canvas.textureRect(.{ .min = .{ 0, y[2] }, .max = .{ sizef[0], y[3] } }, bicubic_upscale.asSlice(), .{});
 
     try surface.present();
 }

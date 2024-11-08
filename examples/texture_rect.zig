@@ -38,7 +38,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
             .min = .{ 50, 50 },
             .max = .{ @max(canvas.size()[0] - 50, 0), @max(canvas.size()[1] - 50, 0) },
         },
-        image,
+        image.asSlice(),
         .{},
     );
 

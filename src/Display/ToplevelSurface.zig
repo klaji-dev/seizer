@@ -212,7 +212,7 @@ const Command = struct {
     const Data = union {
         blit: struct {
             pos: [2]f64,
-            src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
+            src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied),
         },
         line: struct {
             point: [2][2]f32,
@@ -222,7 +222,7 @@ const Command = struct {
         rect_texture: struct {
             dst_area: seizer.geometry.AABB(f64),
             src_area: seizer.geometry.AABB(f64),
-            src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied),
+            src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied),
             color: seizer.color.argbf32_premultiplied,
         },
         rect_fill: struct {
@@ -273,7 +273,7 @@ pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premul
     slice.items(.renderData)[index] = .{ .rect_clear = .{ .area = area, .color = color } };
 }
 
-pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void {
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
     var rect = seizer.geometry.Rect(f64){ .pos = pos, .size = seizer.geometry.vec.into(f64, src_image.size) };
     rect = rect.translate(pos);
@@ -306,7 +306,7 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64)
     });
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const canvas_clip = seizer.geometry.AABB(f64){ .min = .{ 0, 0 }, .max = .{
@@ -495,13 +495,13 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
             const src_image = data.rect_texture.src_image;
             const color = data.rect_texture.color;
 
-            std.debug.assert(dst_area.size()[0] >= 0 and dst_area.size()[1] >= 0);
+            std.debug.assert(dst_area.sizePlusEpsilon()[0] >= 0 and dst_area.sizePlusEpsilon()[1] >= 0);
 
             const dst_area_clamped = dst_area.clamp(clip.into(f64));
 
             const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
             const Sampler = struct {
-                texture: Linear,
+                texture: seizer.image.Slice(seizer.color.argbf32_premultiplied),
                 dst_offset: [2]f64,
                 // dst_size: [2]f64,
                 src_area: seizer.geometry.AABB(f64),
@@ -584,7 +584,7 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
         },
         .rect_clear => {
             const d = data.rect_clear;
-            this.framebuffer.clear(clip, d.area.clamp(clip), d.color);
+            this.framebuffer.set(d.area.clamp(clip), d.color);
         },
         .rect_stroke => {
             // TODO

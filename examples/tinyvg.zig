@@ -82,7 +82,7 @@ fn onCursorRender(listener: *seizer.Display.Surface.OnRenderListener, surface: *
 
     const canvas = try surface.canvas();
     canvas.clear(.{ .r = 0, .g = 0, .b = 0, .a = 0 });
-    canvas.blit(.{ 0, 0 }, cursor_image);
+    canvas.blit(.{ 0, 0 }, cursor_image.asSlice());
 
     try surface.present();
 }
@@ -93,8 +93,8 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     const canvas = try surface.canvas();
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
-    canvas.blit(.{ 50, 50 }, shield_image);
-    canvas.blit(.{ 100, 50 }, cursor_image);
+    canvas.blit(.{ 50, 50 }, shield_image.asSlice());
+    canvas.blit(.{ 100, 50 }, cursor_image.asSlice());
 
     try surface.present();
 }

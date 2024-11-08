@@ -106,7 +106,7 @@ pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premul
     this.framebuffer.clear(color);
 }
 
-pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied)) void {
+pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     const pos_i = [2]i32{
@@ -147,10 +147,10 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64)
 
     const area_u = area.into(i32);
 
-    this.framebuffer.drawFillRect(area_u.min, area_u.max, color);
+    this.framebuffer.asSlice().drawFillRect(area_u.min, area_u.max, color);
 }
 
-pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
+pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
     _ = this;
@@ -168,7 +168,7 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
     const width: f32 = @floatCast(options.width);
     const end_width: f32 = @floatCast(options.end_width orelse width);
 
-    this.framebuffer.drawLine(.{ .min = .{ 0, 0 }, .max = this.framebuffer.size }, start_f, end_f, .{ width, end_width }, .{ options.color, end_color });
+    this.framebuffer.asSlice().drawLine(.{ .min = .{ 0, 0 }, .max = this.framebuffer.size }, start_f, end_f, .{ width, end_width }, .{ options.color, end_color });
 }
 
 const Swapchain = @import("./Swapchain.zig");

@@ -33,7 +33,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     const canvas = try surface.canvas();
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
-    canvas.blit(.{ 50, 50 }, image);
+    canvas.blit(.{ 50, 50 }, image.asSlice());
 
     try surface.present();
 }
