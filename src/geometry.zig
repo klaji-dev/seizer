@@ -86,7 +86,10 @@ pub fn Rect(comptime T: type) type {
         pub fn toAABB(this: @This()) AABB(T) {
             return AABB(T){
                 .min = this.topLeft(),
-                .max = this.bottomRight(),
+                .max = .{
+                    this.pos[0] + this.size[0] - 1,
+                    this.pos[1] + this.size[1] - 1,
+                },
             };
         }
     };
@@ -138,9 +141,12 @@ pub fn AABB(comptime T: type) type {
         }
 
         pub fn fromRect(rect: Rect(T)) @This() {
-            return .{
-                .min = rect.topLeft(),
-                .max = rect.bottomRight(),
+            return AABB(T){
+                .min = rect.pos,
+                .max = .{
+                    rect.pos[0] + rect.size[0] - 1,
+                    rect.pos[1] + rect.size[1] - 1,
+                },
             };
         }
 
@@ -195,12 +201,16 @@ pub fn AABB(comptime T: type) type {
 
         pub fn size(this: @This()) [2]T {
             return [2]T{
-                this.max[0] - this.min[0],
-                this.max[1] - this.min[1],
+                this.max[0] - this.min[0] + 1,
+                this.max[1] - this.min[1] + 1,
             };
         }
 
         pub fn clamp(value: @This(), bounds: @This()) @This() {
+            std.debug.assert(value.min[0] <= value.max[0]);
+            std.debug.assert(value.min[1] <= value.max[1]);
+            std.debug.assert(bounds.min[0] <= bounds.max[0]);
+            std.debug.assert(bounds.min[1] <= bounds.max[1]);
             return .{
                 .min = .{
                     std.math.clamp(value.min[0], bounds.min[0], bounds.max[0]),
@@ -210,6 +220,13 @@ pub fn AABB(comptime T: type) type {
                     std.math.clamp(value.max[0], bounds.min[0], bounds.max[0]),
                     std.math.clamp(value.max[1], bounds.min[1], bounds.max[1]),
                 },
+            };
+        }
+
+        pub fn pointClamp(bounds: @This(), point: [2]T) [2]T {
+            return .{
+                std.math.clamp(point[0], bounds.min[0], bounds.max[0]),
+                std.math.clamp(point[1], bounds.min[1], bounds.max[1]),
             };
         }
     };

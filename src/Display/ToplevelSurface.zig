@@ -237,6 +237,21 @@ const Command = struct {
         // TODO: Implement these commands
         // rect_stroke,
         // rect_fill_stroke,
+
+        pub fn asBytes(this: *const @This(), tag: Tag) []const u8 {
+            return switch (tag) {
+                .blit => std.mem.asBytes(&this.blit),
+                .line => std.mem.asBytes(&this.line),
+                .rect_texture => std.mem.asBytes(&this.rect_texture),
+                .rect_fill => std.mem.asBytes(&this.rect_fill),
+                .rect_clear => std.mem.asBytes(&this.rect_clear),
+
+                // TODO: Implement these commands
+                .rect_stroke,
+                .rect_fill_stroke,
+                => unreachable,
+            };
+        }
     };
 };
 
@@ -270,9 +285,17 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64)
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
     _ = options;
 
+    std.debug.assert(area.min[0] < area.max[0]);
+    std.debug.assert(area.min[1] < area.max[1]);
+
+    const canvas_clip = seizer.geometry.AABB(f64){ .min = .{ 0, 0 }, .max = .{
+        @floatFromInt(this.current_configuration.window_size[0] - 1),
+        @floatFromInt(this.current_configuration.window_size[1] - 1),
+    } };
+
     this.command.appendAssumeCapacity(.{
         .tag = .rect_fill,
-        .renderRect = area.into(u32),
+        .renderRect = area.clamp(canvas_clip).into(u32),
         .renderData = .{ .rect_fill = .{
             .area = area,
             .color = color,
@@ -283,12 +306,14 @@ pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64)
 pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AABB(f64), src_image: seizer.image.Linear(seizer.color.argbf32_premultiplied), options: seizer.Canvas.TextureRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
+    const canvas_clip = seizer.geometry.AABB(f64){ .min = .{ 0, 0 }, .max = .{
+        @floatFromInt(this.current_configuration.window_size[0] - 1),
+        @floatFromInt(this.current_configuration.window_size[1] - 1),
+    } };
+
     this.command.appendAssumeCapacity(.{
         .tag = .rect_texture,
-        .renderRect = .{
-            .min = .{ @intFromFloat(dst_area.min[0]), @intFromFloat(dst_area.min[1]) },
-            .max = .{ @intFromFloat(dst_area.max[0]), @intFromFloat(dst_area.max[1]) },
-        },
+        .renderRect = dst_area.clamp(canvas_clip).into(u32),
         .renderData = .{ .rect_texture = .{
             .dst_area = dst_area,
             .src_area = options.src_area orelse .{ .min = .{ 0, 0 }, .max = .{ @floatFromInt(src_image.size[0]), @floatFromInt(src_image.size[1]) } },
@@ -307,7 +332,10 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
     const width: f32 = @floatCast(options.width);
     const end_width: f32 = @floatCast(options.end_width orelse width);
 
-    const canvas_clip = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = this.current_configuration.window_size };
+    const canvas_clip = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = .{
+        this.current_configuration.window_size[0] - 1,
+        this.current_configuration.window_size[1] - 1,
+    } };
     const rmax = @max(width, end_width);
     const area_line = seizer.geometry.AABB(f32).init(.{ .{
         @floor(@min(start_f[0], end_f[0]) - rmax),
@@ -332,13 +360,14 @@ pub fn canvas_line(this_opaque: ?*anyopaque, start: [2]f64, end: [2]f64, options
 }
 
 const binning_size = 64;
+const bin_aabb = seizer.geometry.AABB(u32).init(.{ .{ 0, 0 }, .{ binning_size - 1, binning_size - 1 } });
 
 fn executeCanvasCommands(this: *ToplevelSurface) !void {
     const allocator = this.display.allocator;
     const window_size = this.current_configuration.window_size;
     const bin_count = .{
-        @divFloor(window_size[0], binning_size),
-        @divFloor(window_size[1], binning_size),
+        @divFloor(window_size[0], binning_size) + 1,
+        @divFloor(window_size[1], binning_size) + 1,
     };
     try this.command_hash.resize(allocator, bin_count[0] * bin_count[1]);
 
@@ -352,7 +381,7 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
         // Compute hash of the render command
         var hash = std.hash.Fnv1a_32.init();
         hash.update(std.mem.asBytes(&tag));
-        hash.update(std.mem.asBytes(&data));
+        hash.update(data.asBytes(tag));
         const h = hash.final();
 
         const update_x_start: usize = rect.min[0] / binning_size;
@@ -367,22 +396,21 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
         }
     }
 
-    const canvas_clip = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = this.current_configuration.window_size };
+    const canvas_clip = seizer.geometry.AABB(u32){
+        .min = .{ 0, 0 },
+        .max = .{ this.current_configuration.window_size[0] - 1, this.current_configuration.window_size[1] - 1 },
+    };
     if (this.command_hash.items.len == this.command_hash_prev.items.len) {
         // See if the we can skip rendering
         for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
             if (h.final() != hp.final()) {
                 const bin_x = i % bin_count[0];
-                const bin_y = i / bin_count[1];
+                const bin_y = i / bin_count[0];
                 const px_pos = [2]u32{
                     @intCast(bin_x * binning_size),
                     @intCast(bin_y * binning_size),
                 };
-                const rect = seizer.geometry.Rect(u32){
-                    .pos = px_pos,
-                    .size = .{ binning_size, binning_size },
-                };
-                const clip = rect.toAABB().clamp(canvas_clip);
+                const clip = bin_aabb.translate(px_pos).clamp(canvas_clip);
                 // Hash mismatch! This bin needs to be updated
                 for (command.items(.tag), command.items(.renderData)) |tag, data| {
                     this.executeCanvasCommand(tag, data, clip);
@@ -396,14 +424,17 @@ fn executeCanvasCommands(this: *ToplevelSurface) !void {
     }
 
     // Swap the memory used for current and previous hash lists
-    const hash_list = this.command_hash_prev;
-    this.command_hash_prev = this.command_hash;
-    this.command_hash = hash_list;
+    std.mem.swap(std.ArrayListUnmanaged(std.hash.Fnv1a_32), &this.command_hash_prev, &this.command_hash);
 
     this.command.shrinkRetainingCapacity(0);
 }
 
 fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.Data, clip: seizer.geometry.AABB(u32)) void {
+    const window_size = this.current_configuration.window_size;
+    const bin_count = .{
+        @divFloor(window_size[0], binning_size) + 1,
+        @divFloor(window_size[1], binning_size) + 1,
+    };
     switch (tag) {
         .blit => {
             const pos = data.blit.pos;
@@ -455,25 +486,11 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
 
             std.debug.assert(dst_area.size()[0] >= 0 and dst_area.size()[1] >= 0);
 
-            const dst_area_clamped = dst_area.clamp(.{
-                .min = .{ 0, 0 },
-                .max = .{
-                    @floatFromInt(this.current_configuration.window_size[0]),
-                    @floatFromInt(this.current_configuration.window_size[1]),
-                },
-            });
+            const dst_area_clamped = dst_area.clamp(clip.into(f64));
 
-            const dst_start_pos = [2]u32{
-                @intFromFloat(dst_area_clamped.min[0]),
-                @intFromFloat(dst_area_clamped.min[1]),
-            };
-            const dst_size = [2]u32{
-                @intFromFloat(dst_area_clamped.size()[0]),
-                @intFromFloat(dst_area_clamped.size()[1]),
-            };
-            if (dst_size[0] == 0 or dst_size[1] == 0) return;
+            if (dst_area_clamped.size()[0] == 0 or dst_area_clamped.size()[1] == 0) return;
 
-            const dst = this.framebuffer.slice(dst_start_pos, dst_size);
+            const dst = this.framebuffer.slice(dst_area_clamped.into(u32).min, dst_area_clamped.into(u32).size());
 
             const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
             const Sampler = struct {
@@ -530,7 +547,7 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
         },
         .rect_clear => {
             const d = data.rect_clear;
-            this.framebuffer.clear(clip, d.area, d.color);
+            this.framebuffer.set(d.area.clamp(clip), d.color);
         },
         .rect_stroke => {
             // TODO
@@ -561,6 +578,7 @@ pub fn onXdgSurfaceEvent(listener: *shimizu.Listener, xdg_surface: shimizu.Proxy
 
             if (!std.mem.eql(u32, &this.current_configuration.window_size, &this.new_configuration.window_size)) {
                 this.current_configuration.window_size = this.new_configuration.window_size;
+                this.command_hash_prev.shrinkRetainingCapacity(0);
                 // if (this.on_event) |on_event| {
                 //     on_event(@ptrCast(this), .{ .resize = [2]f32{
                 //         @floatFromInt(this.current_configuration.window_size[0]),

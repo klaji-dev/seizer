@@ -51,10 +51,10 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.imag
 pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: seizer.Canvas.FillRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
-    const transformed_area = seizer.geometry.AABB(f64).init(
+    const transformed_area = seizer.geometry.AABB(f64).init(.{
         seizer.geometry.mat4.mulVec(f64, this.transform, area.min ++ .{ 0, 1 })[0..2].*,
         seizer.geometry.mat4.mulVec(f64, this.transform, area.max ++ .{ 0, 1 })[0..2].*,
-    );
+    });
 
     const clipped_area = transformed_area.clamp(this.clip_area);
 
