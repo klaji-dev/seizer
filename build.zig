@@ -55,8 +55,6 @@ pub fn build(b: *Builder) !void {
         .root_source_file = b.path("dep/AngelCodeFont.zig"),
     });
 
-    const generate_wayland_step = b.step("generate-wayland-protocols", "Generate wayland-protocols and copy files to source repository. Does nothing if `generate-wayland-protocols` option is false.");
-
     const shimizu_dep = b.dependency("shimizu", .{
         .target = target,
         .optimize = optimize,
@@ -115,8 +113,6 @@ pub fn build(b: *Builder) !void {
         module.addImport("xkb", xkb_dep.module("xkb"));
     }
 
-    const check_step = b.step("check", "check that everything compiles");
-
     const example_fields = @typeInfo(Example).Enum.fields;
     inline for (example_fields) |tag| {
         const tag_name = tag.name;
@@ -127,7 +123,6 @@ pub fn build(b: *Builder) !void {
             .optimize = optimize,
         });
         exe.root_module.addImport("seizer", module);
-        exe.step.dependOn(generate_wayland_step);
 
         // build
         const build_step = b.step("example-" ++ tag_name, "Build the " ++ tag_name ++ " example");
@@ -143,21 +138,9 @@ pub fn build(b: *Builder) !void {
         }
         const run_step = b.step("example-" ++ tag_name ++ "-run", "Run the " ++ tag_name ++ " example");
         run_step.dependOn(&run_cmd.step);
-
-        // check that this example compiles, but skip llvm output that takes a while to run
-        const exe_check = b.addExecutable(.{
-            .name = tag_name,
-            .root_source_file = b.path("examples/" ++ tag_name ++ ".zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        exe_check.root_module.addImport("seizer", module);
-        exe_check.step.dependOn(generate_wayland_step);
-
-        check_step.dependOn(&exe_check.step);
     }
 
-    // benchmarks
+    // test seizer module
     const module_test_exe = b.addTest(.{
         .root_source_file = b.path("./src/seizer.zig"),
         .target = target,
@@ -210,4 +193,47 @@ pub fn build(b: *Builder) !void {
 
     const bench_image_step = b.step("bench-image", "Run image benchmarks");
     bench_image_step.dependOn(&run_bench_image_exe.step);
+
+    // Compile everything without installing it, so we can skip the LLVM output
+    const check_step = b.step("check", "check that everything compiles");
+
+    const check_module_test_exe = b.addTest(.{
+        .root_source_file = b.path("./src/seizer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    check_module_test_exe.root_module.addImport("zigimg", zigimg_dep.module("zigimg"));
+    check_step.dependOn(&check_module_test_exe.step);
+
+    const check_bench_color_exe = b.addExecutable(.{
+        .name = "bench_color",
+        .root_source_file = b.path("./bench/color.zig"),
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+    check_bench_color_exe.root_module.addImport("seizer", module);
+    check_bench_color_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    check_step.dependOn(&check_bench_color_exe.step);
+
+    const check_bench_image_exe = b.addExecutable(.{
+        .name = "bench_image",
+        .root_source_file = b.path("./bench/image.zig"),
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+    check_bench_image_exe.root_module.addImport("seizer", module);
+    check_bench_image_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    check_step.dependOn(&check_bench_image_exe.step);
+
+    inline for (example_fields) |tag| {
+        // check that this example compiles, but skip llvm output that takes a while to run
+        const exe_check = b.addExecutable(.{
+            .name = tag.name,
+            .root_source_file = b.path("examples/" ++ tag.name ++ ".zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        exe_check.root_module.addImport("seizer", module);
+        check_step.dependOn(&exe_check.step);
+    }
 }
