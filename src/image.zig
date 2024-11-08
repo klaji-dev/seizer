@@ -358,6 +358,91 @@ pub fn Slice(Pixel: type) type {
     };
 }
 
+pub const TVG = struct {
+    header: seizer.tvg.parsing.Header,
+    source: []const u8,
+    scratch_buffer: []u8,
+
+    pub fn size(this: @This()) [2]u32 {
+        return .{ this.header.width, this.header.height };
+    }
+
+    pub fn fromMemory(allocator: std.mem.Allocator, source: []const u8) !TVG {
+        var stream = std.io.fixedBufferStream(source);
+        var parser = try seizer.tvg.parse(allocator, stream.reader());
+        defer parser.deinit();
+
+        var temp_buffer_size: usize = 0;
+
+        while (try parser.next()) |cmd| {
+            _ = cmd;
+            temp_buffer_size = @max(parser.temp_buffer.capacity, temp_buffer_size);
+        }
+
+        std.log.debug("max buffer size {}", .{temp_buffer_size});
+        const align_size = std.mem.alignAllocLen(std.math.maxInt(u32), temp_buffer_size, 16);
+        const scratch_buffer = try allocator.alloc(u8, align_size);
+
+        return .{
+            .header = parser.header,
+            .scratch_buffer = scratch_buffer,
+            .source = source,
+        };
+    }
+
+    pub fn deinit(tvg: *const TVG, allocator: std.mem.Allocator) void {
+        allocator.free(tvg.scratch_buffer);
+    }
+
+    pub const RasterizeOptions = struct {
+        // TODO: Implement scaling
+        // scaling: usize = 1,
+        // TODO: Implement anti-aliasing
+        // anti_aliasing: usize,
+        /// Used for temporarily storing data while rendering
+        temporary_allocator: ?std.mem.Allocator = null,
+    };
+    pub fn rasterize(tvg: *const TVG, destination: *Linear(seizer.color.argbf32_premultiplied), options: RasterizeOptions) !void {
+        const framebuffer = Framebuffer.init(destination);
+
+        var stream = std.io.fixedBufferStream(tvg.source);
+        var fba = std.heap.FixedBufferAllocator.init(tvg.scratch_buffer);
+
+        var parser = seizer.tvg.parse(fba.allocator(), stream.reader()) catch unreachable;
+        defer parser.deinit();
+
+        while (parser.next() catch unreachable) |cmd| {
+            try seizer.tvg.rendering.renderCommand(&framebuffer, tvg.header, parser.color_table, cmd, options.temporary_allocator);
+            fba.reset();
+        }
+    }
+
+    /// Implements a type compatible with the TinyVG `Framebuffer` interface.
+    pub const Framebuffer = struct {
+        image: *Linear(seizer.color.argbf32_premultiplied),
+
+        // Fields expected by TVG renderer
+        width: usize,
+        height: usize,
+
+        pub fn init(framebuffer: *Linear(seizer.color.argbf32_premultiplied)) Framebuffer {
+            return .{
+                .image = framebuffer,
+                .width = framebuffer.size[0],
+                .height = framebuffer.size[1],
+            };
+        }
+
+        pub fn setPixel(self: *const @This(), x: isize, y: isize, src_color: seizer.tvg.Color) void {
+            if (x < 0 or y < 0 or x > self.width or y > self.height) return;
+            const argb = seizer.color.argb(f32, .straight, f32);
+            const color = argb.fromArray(.{ src_color.b, src_color.g, src_color.r, src_color.a });
+            const dest_color = color.convertAlphaModelTo(.premultiplied);
+            self.image.setPixel(.{ @intCast(x), @intCast(y) }, dest_color);
+        }
+    };
+};
+
 pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
     std.debug.assert(@hasDecl(Pixel, "compositeSrcOver"));
     return struct {
