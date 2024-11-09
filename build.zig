@@ -194,6 +194,25 @@ pub fn build(b: *Builder) !void {
     const bench_image_step = b.step("bench-image", "Run image benchmarks");
     bench_image_step.dependOn(&run_bench_image_exe.step);
 
+    // image benchmarks
+    const bench_geometry_exe = b.addExecutable(.{
+        .name = "bench_geometry",
+        .root_source_file = b.path("./bench/geometry.zig"),
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+    bench_geometry_exe.root_module.addImport("seizer", module);
+    bench_geometry_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    b.installArtifact(bench_geometry_exe);
+
+    const run_bench_geometry_exe = b.addRunArtifact(bench_geometry_exe);
+    if (b.args) |args| {
+        run_bench_geometry_exe.addArgs(args);
+    }
+
+    const bench_geometry_step = b.step("bench-geometry", "Run geometry benchmarks");
+    bench_geometry_step.dependOn(&run_bench_geometry_exe.step);
+
     // Compile everything without installing it, so we can skip the LLVM output
     const check_step = b.step("check", "check that everything compiles");
 
@@ -224,6 +243,16 @@ pub fn build(b: *Builder) !void {
     check_bench_image_exe.root_module.addImport("seizer", module);
     check_bench_image_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
     check_step.dependOn(&check_bench_image_exe.step);
+
+    const check_bench_geometry_exe = b.addExecutable(.{
+        .name = "bench_geometry",
+        .root_source_file = b.path("./bench/geometry.zig"),
+        .target = target,
+        .optimize = benchmark_optimize,
+    });
+    check_bench_geometry_exe.root_module.addImport("seizer", module);
+    check_bench_geometry_exe.root_module.addImport("zbench", zbench_dep.module("zbench"));
+    check_step.dependOn(&check_bench_geometry_exe.step);
 
     inline for (example_fields) |tag| {
         // check that this example compiles, but skip llvm output that takes a while to run

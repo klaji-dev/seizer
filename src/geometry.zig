@@ -246,6 +246,92 @@ pub fn AABB(comptime T: type) type {
     };
 }
 
+/// AABB type optimized for SIMD.
+/// Stores max negated to reduce instructions for intersection/union operations.
+/// Because of the negation, SIMD_AABB only works for signed data types.
+/// [SIMD_AABB]: https://gist.github.com/mtsamis/441c16f3d6fc86566eaa2a302ed247c9
+pub fn SIMD_AABB(comptime T: type) type {
+    return struct {
+        /// Stores min and max as an array of 4 values with the 2 max values inverted.
+        /// A direct initialization would look like this:
+        /// `const simd_aabb = .{ .data = .{ min_x, min_y, -max_x, -max_y } };`
+        data: @Vector(4, T),
+
+        /// Initialize from two points
+        pub fn init(a: [2]T, b: [2]T) @This() {
+            const min_x = @min(a[0], b[0]);
+            const max_x = @max(a[0], b[0]);
+            const min_y = @min(a[1], b[1]);
+            const max_y = @max(a[1], b[1]);
+            return .{ .data = .{
+                min_x,
+                min_y,
+                -max_x,
+                -max_y,
+            } };
+        }
+
+        /// Return the minimum point of the AABB as array with layout `.{ x, y }`.
+        pub fn min(this: @This()) [2]T {
+            return this.data[0..2];
+        }
+
+        /// Return the maximum point of the AABB as array with layout `.{ x, y }`.
+        pub fn max(this: @This()) [2]T {
+            const vec_this: @Vector(4, T) = this.data;
+            const neg = -vec_this;
+            return neg[2..4];
+        }
+
+        /// Returns true if the AABBs are overlapping.
+        /// Returns false if the AABBs are not overlapping.
+        pub fn overlaps(a: @This(), b: @This()) bool {
+            const vec_a: @Vector(4, T) = a.data;
+            const vec_b: @Vector(4, T) = b.data;
+            const vec_b_shuf = @shuffle(T, vec_b, undefined, [4]u8{ 2, 3, 0, 1 });
+            return @reduce(.And, vec_a <= -vec_b_shuf);
+        }
+
+        /// Returns the area covered by both `a` and `b`.
+        pub fn intersection(a: @This(), b: @This()) @This() {
+            return .{ .data = @min(a.data, b.data) };
+        }
+    };
+}
+
+test "SIMD_AABB == AABB" {
+    // Checks that AABB and SIMD_AABB compute the same result for
+    // - Intersection of seperate boxes
+    // - Intersection of overlapping boxes
+    // - Overlap test of seperate boxes
+    // - Overlap test of overlapping boxes
+    const overlapped_a = [_]f32{ 0, 0, 7.5, 7.5 };
+    const overlapped_b = [_]f32{ 2.5, 2.5, 10, 10 };
+    const seperate_a = [_]f32{ 0, 0, 2.5, 2.5 };
+    const seperate_b = [_]f32{ 7.5, 7.5, 10, 10 };
+
+    const aabb_overlapped_a = AABB(f32).init(.{ overlapped_a[0..2].*, overlapped_a[2..4].* });
+    const aabb_overlapped_b = AABB(f32).init(.{ overlapped_b[0..2].*, overlapped_b[2..4].* });
+    const simd_aabb_overlapped_a = SIMD_AABB(f32).init(overlapped_a[0..2].*, overlapped_a[2..4].*);
+    const simd_aabb_overlapped_b = SIMD_AABB(f32).init(overlapped_b[0..2].*, overlapped_b[2..4].*);
+
+    const aabb_seperate_a = AABB(f32).init(.{ seperate_a[0..2].*, seperate_a[2..4].* });
+    const aabb_seperate_b = AABB(f32).init(.{ seperate_b[0..2].*, seperate_b[2..4].* });
+    const simd_aabb_seperate_a = SIMD_AABB(f32).init(seperate_a[0..2].*, seperate_a[2..4].*);
+    const simd_aabb_seperate_b = SIMD_AABB(f32).init(seperate_b[0..2].*, seperate_b[2..4].*);
+
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 0, 0, -7.5, -7.5 }), simd_aabb_overlapped_a.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 2.5, 2.5, -10, -10 }), simd_aabb_overlapped_b.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 0, 0, -2.5, -2.5 }), simd_aabb_seperate_a.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 7.5, 7.5, -10, -10 }), simd_aabb_seperate_b.data);
+
+    try std.testing.expectEqual(aabb_overlapped_a.overlaps(aabb_overlapped_b), simd_aabb_overlapped_a.overlaps(simd_aabb_overlapped_b));
+    try std.testing.expectEqual(aabb_overlapped_b.overlaps(aabb_overlapped_a), simd_aabb_overlapped_b.overlaps(simd_aabb_overlapped_a));
+
+    try std.testing.expectEqual(aabb_seperate_a.overlaps(aabb_seperate_b), simd_aabb_seperate_a.overlaps(simd_aabb_seperate_b));
+    try std.testing.expectEqual(aabb_seperate_b.overlaps(aabb_seperate_a), simd_aabb_seperate_b.overlaps(simd_aabb_seperate_a));
+}
+
 /// Defines a rectangular region relative to another rectangular region. In this case the numbers
 /// represent how far inside another rectangle the min and max positions are.
 pub fn Inset(comptime T: type) type {
