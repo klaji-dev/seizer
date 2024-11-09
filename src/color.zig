@@ -525,6 +525,13 @@ pub const sRGB8 = enum(u8) {
         return @enumFromInt(@as(u8, @intCast(res)));
     }
 
+    /// Converts a color component from a linear 0..1 space to a compressed 8-bit encoding.
+    ///
+    /// > [!warn] Alpha is not a color component! It is generally linear even in 8-bit encodings.
+    pub fn encodeFast22Approx(comptime F: type, component_linear: F) sRGB8 {
+        return @enumFromInt(@as(u8, @intFromFloat(std.math.pow(F, component_linear, 2.2) * std.math.maxInt(u8))));
+    }
+
     const TO_SRGB8_TABLE: [104]u32 = .{
         0x0073000d, 0x007a000d, 0x0080000d, 0x0087000d, 0x008d000d, 0x0094000d, 0x009a000d, 0x00a1000d,
         0x00a7001a, 0x00b4001a, 0x00c1001a, 0x00ce001a, 0x00da001a, 0x00e7001a, 0x00f4001a, 0x0101001a,

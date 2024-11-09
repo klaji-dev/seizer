@@ -58,6 +58,8 @@ pub fn main() !void {
     try bench.add("argb compositeXor", argb_compositeXor, .{});
     try bench.add("argb8888 to argb", argb8888_to_argb, .{});
     try bench.add("argb to argb8888", argb_to_argb8888, .{});
+    try bench.add("sRGB encode naive", @"sRGB Encode Naive", .{});
+    try bench.add("x^2.2 encode approximation", @"x^2.2 encode approximation", .{});
 
     try stdout.writeAll("\n");
     try bench.run(stdout);
@@ -100,6 +102,32 @@ fn argb8888_to_argb(_: std.mem.Allocator) void {
 fn argb_to_argb8888(_: std.mem.Allocator) void {
     for (argb_src_samples) |argb_sample| {
         std.mem.doNotOptimizeAway(argb_sample.convertColorTo(seizer.color.sRGB8).convertAlphaTo(u8));
+    }
+}
+
+fn @"sRGB Encode Naive"(_: std.mem.Allocator) void {
+    for (argb_src_samples) |argb_sample| {
+        const encoded = [3]seizer.color.sRGB8{
+            seizer.color.sRGB8.encodeNaive(f32, argb_sample.b),
+            seizer.color.sRGB8.encodeNaive(f32, argb_sample.g),
+            seizer.color.sRGB8.encodeNaive(f32, argb_sample.r),
+        };
+        std.mem.doNotOptimizeAway(encoded);
+        const alpha_u8: u8 = @intFromFloat(argb_sample.a * std.math.maxInt(u8));
+        std.mem.doNotOptimizeAway(alpha_u8);
+    }
+}
+
+fn @"x^2.2 encode approximation"(_: std.mem.Allocator) void {
+    for (argb_src_samples) |argb_sample| {
+        const encoded = [3]seizer.color.sRGB8{
+            seizer.color.sRGB8.encodeFast22Approx(f32, argb_sample.b),
+            seizer.color.sRGB8.encodeFast22Approx(f32, argb_sample.g),
+            seizer.color.sRGB8.encodeFast22Approx(f32, argb_sample.r),
+        };
+        std.mem.doNotOptimizeAway(encoded);
+        const alpha_u8: u8 = @intFromFloat(argb_sample.a * std.math.maxInt(u8));
+        std.mem.doNotOptimizeAway(alpha_u8);
     }
 }
 
