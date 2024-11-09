@@ -499,80 +499,37 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
 
             const dst_area_clamped = dst_area.clamp(clip.into(f64));
 
-            const Linear = seizer.image.Linear(seizer.color.argbf32_premultiplied);
             const Sampler = struct {
                 texture: seizer.image.Slice(seizer.color.argbf32_premultiplied),
-                dst_offset: [2]f64,
-                // dst_size: [2]f64,
-                src_area: seizer.geometry.AABB(f64),
                 tint: seizer.color.argbf32_premultiplied,
-                // bin_clip: seizer.geometry.AABB(u32),
-                // bin_count: [2]f32,
 
-                pub fn sample(sampler: *const @This(), start: [2]f64, end: [2]f64, sample_rect: Linear) void {
-                    // _ = sampler;
-                    const stridef = [2]f64{
-                        (end[0] - start[0]) / @as(f64, @floatFromInt(sample_rect.size[0])),
-                        (end[1] - start[1]) / @as(f64, @floatFromInt(sample_rect.size[1])),
-                    };
-                    for (0..sample_rect.size[1]) |sample_y| {
-                        for (0..sample_rect.size[0]) |sample_x| {
-                            const src_posf = .{
-                                sampler.src_area.min[0] + (start[0] + stridef[0] * @as(f64, @floatFromInt(sample_x))) * sampler.src_area.size()[0],
-                                sampler.src_area.min[1] + (start[1] + stridef[1] * @as(f64, @floatFromInt(sample_y))) * sampler.src_area.size()[1],
-                            };
-                            const src_pixel = sampler.texture.getPixel(.{
-                                @min(@as(u32, @intFromFloat(@max(src_posf[0], 0))), sampler.texture.size[0] - 1),
-                                @min(@as(u32, @intFromFloat(@max(src_posf[1], 0))), sampler.texture.size[1] - 1),
-                            });
-                            sample_rect.setPixel(
-                                .{ @intCast(sample_x), @intCast(sample_y) },
-                                src_pixel.tint(sampler.tint),
-                            );
-
-                            // const posf = [2]f32{
-                            //     @floatFromInt(pos[0]),
-                            //     @floatFromInt(pos[1]),
-                            // };
-                            // const sample_posf = [2]f32{
-                            //     @floatFromInt(sample_x),
-                            //     @floatFromInt(sample_y),
-                            // };
-                            // const sample_sizef = [2]f32{
-                            //     @floatFromInt(sample_rect.size[0]),
-                            //     @floatFromInt(sample_rect.size[1]),
-                            // };
-                            // _ = pos;
-                            // sample_rect.setPixel(
-                            //     .{ @intCast(sample_x), @intCast(sample_y) },
-                            //     seizer.color.argbf32_premultiplied.init(
-                            //         0,
-                            //         @floatCast(src_posf[0]),
-                            //         @floatCast(src_posf[1]),
-                            //         1.0,
-                            //     ),
-                            // );
-                        }
-                    }
+                pub fn sample(sampler: *const @This(), pos: [2]f64) seizer.color.argbf32_premultiplied {
+                    const src_pixel = sampler.texture.getPixel(.{
+                        @min(@as(u32, @intFromFloat(@max(pos[0], 0))), sampler.texture.size[0] - 1),
+                        @min(@as(u32, @intFromFloat(@max(pos[1], 0))), sampler.texture.size[1] - 1),
+                    });
+                    return src_pixel.tint(sampler.tint);
                 }
             };
 
             this.framebuffer.compositeSampler(
                 dst_area_clamped.into(u32),
+                f64,
+                src_area.inset(.{
+                    .min = .{
+                        ((dst_area_clamped.min[0] - dst_area.min[0]) / dst_area.size()[0]) * src_area.size()[0],
+                        ((dst_area_clamped.min[1] - dst_area.min[1]) / dst_area.size()[1]) * src_area.size()[1],
+                    },
+                    .max = .{
+                        ((dst_area_clamped.max[0] - dst_area.max[0]) / dst_area.size()[0]) * src_area.size()[0],
+                        ((dst_area_clamped.max[1] - dst_area.max[1]) / dst_area.size()[1]) * src_area.size()[1],
+                    },
+                }),
                 *const Sampler,
                 Sampler.sample,
                 &.{
                     .texture = src_image,
-                    .dst_offset = .{
-                        // 0, 0,
-                        dst_area_clamped.min[0] - dst_area.min[0],
-                        dst_area_clamped.min[1] - dst_area.min[1],
-                    },
-                    // .dst_size = dst_area.size(),
-                    .src_area = src_area,
                     .tint = color,
-                    // .bin_clip = clip,
-                    // .bin_count = .{ @floatFromInt(bin_count[0]), @floatFromInt(bin_count[1]) },
                 },
             );
         },
