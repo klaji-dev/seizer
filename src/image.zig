@@ -627,35 +627,36 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
         }
 
         pub fn compositeSampler(
-            this: @This(),
-            dst: seizer.geometry.AABB(u32),
+            dst: @This(),
+            dst_area: seizer.geometry.AABB(u32),
+            comptime F: type,
+            src_area: seizer.geometry.AABB(F),
             comptime SamplerContext: type,
-            comptime sample_fn: fn (SamplerContext, min: [2]f64, max: [2]f64, sample_rect: Linear(Pixel)) void,
+            comptime sample_fn: fn (SamplerContext, pos: [2]F) Pixel,
             sampler_context: SamplerContext,
         ) void {
             const min_tile_pos = [2]u32{
-                dst.min[0] / tile_size[0],
-                dst.min[1] / tile_size[1],
+                dst_area.min[0] / tile_size[0],
+                dst_area.min[1] / tile_size[1],
             };
             const max_tile_pos = [2]u32{
-                dst.max[0] / tile_size[0],
-                dst.max[1] / tile_size[1],
+                dst_area.max[0] / tile_size[0],
+                dst_area.max[1] / tile_size[1],
             };
 
-            const dst_sizef = dst.into(f64).size();
+            const size_in_tiles = dst.sizeInTiles();
 
-            const size_in_tiles = this.sizeInTiles();
-
-            var sample_rect_pixel_buffer: [@as(u32, tile_size[0]) * tile_size[1]]Pixel = undefined;
-            const sample_rect = Linear(Pixel){
-                .pixels = &sample_rect_pixel_buffer,
-                .size = .{ tile_size[0], tile_size[1] },
+            const sample_stride = [2]F{
+                (src_area.size()[0]) / @as(F, @floatFromInt(dst_area.size()[0])),
+                (src_area.size()[1]) / @as(F, @floatFromInt(dst_area.size()[1])),
             };
+
+            var sample_buffer: Tile = undefined;
 
             for (min_tile_pos[1]..max_tile_pos[1] + 1) |tile_y| {
                 for (min_tile_pos[0]..max_tile_pos[0] + 1) |tile_x| {
                     const tile_index = tile_y * size_in_tiles[0] + tile_x;
-                    const tile = &this.tiles[tile_index];
+                    const tile = &dst.tiles[tile_index];
 
                     const tile_pos_px = [2]u32{
                         @intCast(tile_x * tile_size[0]),
@@ -669,8 +670,8 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                         },
                     };
 
-                    const min_pos = tile_bounds_px.pointClamp(dst.min);
-                    const max_pos = tile_bounds_px.pointClamp(dst.max);
+                    const min_pos = tile_bounds_px.pointClamp(dst_area.min);
+                    const max_pos = tile_bounds_px.pointClamp(dst_area.max);
 
                     const min_in_tile = [2]u32{
                         min_pos[0] - tile_bounds_px.min[0],
@@ -681,27 +682,35 @@ pub fn Tiled(comptime tile_size: [2]u8, Pixel: type) type {
                         max_pos[1] - tile_bounds_px.min[1],
                     };
 
-                    // get the pixels we'll need to render
-                    sample_rect.clear(seizer.color.argbf32_premultiplied.TRANSPARENT);
-                    sample_fn(
-                        sampler_context,
-                        .{
-                            (@as(f64, @floatFromInt(tile_pos_px[0])) - dst.into(f64).min[0]) / dst_sizef[0],
-                            (@as(f64, @floatFromInt(tile_pos_px[1])) - dst.into(f64).min[1]) / dst_sizef[1],
-                        },
-                        .{
-                            (@as(f64, @floatFromInt(tile_pos_px[0] + tile_size[0] - 1)) - dst.into(f64).min[0]) / dst_sizef[0],
-                            (@as(f64, @floatFromInt(tile_pos_px[1] + tile_size[1] - 1)) - dst.into(f64).min[1]) / dst_sizef[1],
-                        },
-                        sample_rect,
-                    );
+                    // clear the pixels in the sample buffer
+                    for (sample_buffer[0..]) |*sample_row| {
+                        for (sample_row[0..]) |*sample| {
+                            sample.* = Pixel.TRANSPARENT;
+                        }
+                    }
 
+                    // get the samples we'll need to render
+                    const sample_start_pos = [2]F{
+                        src_area.min[0] + @as(F, @floatFromInt(min_pos[0] - dst_area.min[0])) * sample_stride[0],
+                        src_area.min[1] + @as(F, @floatFromInt(min_pos[1] - dst_area.min[1])) * sample_stride[1],
+                    };
+
+                    var sample_pos: [2]F = sample_start_pos;
+                    for (min_in_tile[1]..max_in_tile[1] + 1) |y| {
+                        sample_pos[0] = sample_start_pos[0];
+                        for (sample_buffer[y][min_in_tile[0] .. max_in_tile[0] + 1]) |*sample_pixel| {
+                            sample_pixel.* = sample_fn(sampler_context, sample_pos);
+
+                            sample_pos[0] += sample_stride[0];
+                        }
+
+                        sample_pos[1] += sample_stride[1];
+                    }
+
+                    // composite the samples with the current pixels
                     for (min_in_tile[1]..max_in_tile[1] + 1) |y| {
                         for (min_in_tile[0]..max_in_tile[0] + 1) |x| {
-                            tile[y][x] = Pixel.compositeSrcOver(
-                                tile[y][x],
-                                sample_rect.getPixel(.{ @intCast(x), @intCast(y) }),
-                            );
+                            tile[y][x] = Pixel.compositeSrcOver(tile[y][x], sample_buffer[y][x]);
                         }
                     }
                 }
@@ -840,7 +849,23 @@ pub fn expectEqualImageSections(section: seizer.geometry.AABB(u32), expected: an
         for (section.min[1]..section.max[1] + 1) |y| {
             for (section.min[0]..section.max[0] + 1) |x| {
                 const pos = [2]u32{ @intCast(x), @intCast(y) };
-                if (!std.meta.eql(expected.getPixel(pos), actual.getPixel(pos))) {
+
+                const expected_pixel = expected.getPixel(pos);
+                const actual_pixel = actual.getPixel(pos);
+
+                const distance_each = [4]f64{
+                    actual_pixel.b - expected_pixel.b,
+                    actual_pixel.g - expected_pixel.g,
+                    actual_pixel.r - expected_pixel.r,
+                    actual_pixel.a - expected_pixel.a,
+                };
+                const distance = @sqrt(distance_each[0] * distance_each[0] +
+                    distance_each[1] * distance_each[1] +
+                    distance_each[2] * distance_each[2] +
+                    distance_each[3] * distance_each[3]);
+
+                if (distance > 0.001) {
+                    std.debug.print("expected pixel to equal {}, found {} (distance = {})\n", .{ expected_pixel, actual_pixel, distance });
                     break :comp_pixels true;
                 }
             }
@@ -859,17 +884,46 @@ pub fn writeTestImagesToTmpDir(section: seizer.geometry.AABB(u32), expected: any
 
     try writeImageToTmpDir(tmp_dir, "actual", section, actual);
     try writeImageToTmpDir(tmp_dir, "expected", section, expected);
+
+    var diff = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, .{ section.max[0] + 1, section.max[1] + 1 });
+    defer diff.free(std.testing.allocator);
+
+    for (section.min[1]..section.max[1] + 1) |y| {
+        for (section.min[0]..section.max[0] + 1) |x| {
+            const pos = [2]u32{ @intCast(x), @intCast(y) };
+
+            const expected_pixel = expected.getPixel(pos);
+            const actual_pixel = actual.getPixel(pos);
+
+            const diff_pixel: seizer.color.argbf32_premultiplied = .{
+                .b = actual_pixel.b - expected_pixel.b,
+                .g = actual_pixel.g - expected_pixel.g,
+                .r = actual_pixel.r - expected_pixel.r,
+                .a = actual_pixel.a - expected_pixel.a,
+            };
+            const diff_pixel_sq: seizer.color.argbf32_premultiplied = .{
+                .b = diff_pixel.b * diff_pixel.b,
+                .g = diff_pixel.g * diff_pixel.g,
+                .r = diff_pixel.r * diff_pixel.r,
+                .a = diff_pixel.a * diff_pixel.a,
+            };
+
+            diff.setPixel(pos, diff_pixel_sq);
+        }
+    }
+
+    try writeImageToTmpDir(tmp_dir, "diff", section, diff);
 }
 
 /// Accepts any type that has a getPixel function
 pub fn writeImageToTmpDir(tmp_dir: std.testing.TmpDir, comptime name: []const u8, section: seizer.geometry.AABB(u32), image: anytype) !void {
-    var zigimg_image = try zigimg.Image.create(std.testing.allocator, section.size()[0], section.size()[1], .rgba32);
+    var zigimg_image = try zigimg.Image.create(std.testing.allocator, section.size()[0] + 1, section.size()[1] + 1, .rgba32);
     defer zigimg_image.deinit();
 
     for (section.min[1]..section.max[1] + 1) |y| {
         for (section.min[0]..section.max[0] + 1) |x| {
             const pos = [2]u32{ @intCast(x), @intCast(y) };
-            const index = y * section.size()[0] + x;
+            const index = y * zigimg_image.width + x;
 
             const actual_pixel = image.getPixel(pos)
                 .convertAlphaModelTo(.straight)
@@ -936,7 +990,7 @@ test "Tiled.set(entire image)" {
     try expectAllPixelsEqual("WHITE", image_aabb, seizer.color.argbf32_premultiplied.WHITE, tiled);
 }
 
-test "Tiled ops == Linear ops" {
+test "Tiled.compositeLinear == Slice.composite" {
     // TODO: replace with fuzz testing in zig 0.14
     var prng = std.Random.DefaultPrng.init(4724468855559179511);
 
@@ -1002,6 +1056,98 @@ test "Tiled ops == Linear ops" {
             };
             linear.slice(pos, src_size).composite(src_linear.slice(.{ 0, 0 }, src_size));
             tiled.compositeLinear(src_area.translate(pos), src_linear.slice(.{ 0, 0 }, src_size));
+        }
+
+        try expectEqualImageSections(.{ .min = .{ 0, 0 }, .max = .{ size[0] - 1, size[1] - 1 } }, linear, tiled);
+    }
+}
+
+test "Tiled.compositeSampler == Slice.compositeSampler" {
+    // TODO: replace with fuzz testing in zig 0.14
+    var prng = std.Random.DefaultPrng.init(1854600890778579343);
+
+    const ITERATIONS = 100;
+    for (0..ITERATIONS) |_| {
+        const src_size = [2]u32{
+            prng.random().uintAtMost(u32, 32) + 1,
+            prng.random().uintAtMost(u32, 32) + 1,
+        };
+        const size = [2]u32{
+            prng.random().uintLessThan(u32, 128) + src_size[0],
+            prng.random().uintLessThan(u32, 128) + src_size[1],
+        };
+
+        const entire_image_area = seizer.geometry.AABB(u32){
+            .min = .{ 0, 0 },
+            .max = .{
+                size[0] - 1,
+                size[1] - 1,
+            },
+        };
+
+        const dst_area = seizer.geometry.AABB(u32){
+            .min = .{ 0, 0 },
+            .max = .{
+                src_size[0] - 1,
+                src_size[1] - 1,
+            },
+        };
+
+        const src_gradient_size = [2]f32{
+            prng.random().float(f32),
+            prng.random().float(f32),
+        };
+        const src_gradient_start = [2]f32{
+            prng.random().float(f32) * (1.0 - src_gradient_size[0]),
+            prng.random().float(f32) * (1.0 - src_gradient_size[1]),
+        };
+        const src_gradient = seizer.geometry.AABB(f32){
+            .min = .{
+                src_gradient_start[0],
+                src_gradient_start[1],
+            },
+            .max = .{
+                src_gradient_start[0] + src_gradient_size[0],
+                src_gradient_start[1] + src_gradient_size[1],
+            },
+        };
+
+        const linear = try Linear(seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, size);
+        defer linear.free(std.testing.allocator);
+        const tiled = try Tiled(.{ 16, 16 }, seizer.color.argbf32_premultiplied).alloc(std.testing.allocator, size);
+        defer tiled.free(std.testing.allocator);
+
+        const clear_color = seizer.color.argb(f32, .straight, f32).init(
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+            prng.random().float(f32),
+        ).convertAlphaModelTo(.premultiplied);
+
+        linear.clear(clear_color);
+        tiled.set(entire_image_area, clear_color);
+
+        try expectEqualImageSections(.{ .min = .{ 0, 0 }, .max = .{ size[0] - 1, size[1] - 1 } }, linear, tiled);
+
+        const RGGradientSampler = struct {
+            pub fn sample(this: @This(), pos: [2]f32) seizer.color.argbf32_premultiplied {
+                _ = this;
+                return seizer.color.argbf32_premultiplied.init(
+                    0,
+                    @floatCast(pos[1]),
+                    @floatCast(pos[0]),
+                    1,
+                );
+            }
+        };
+
+        for (0..10) |_| {
+            const pos = [2]u32{
+                prng.random().uintAtMost(u32, size[0] - src_size[0]),
+                prng.random().uintAtMost(u32, size[1] - src_size[1]),
+            };
+            linear.slice(pos, src_size).compositeSampler(f32, src_gradient, RGGradientSampler, RGGradientSampler.sample, .{});
+            tiled.compositeSampler(dst_area.translate(pos), f32, src_gradient, RGGradientSampler, RGGradientSampler.sample, .{});
         }
 
         try expectEqualImageSections(.{ .min = .{ 0, 0 }, .max = .{ size[0] - 1, size[1] - 1 } }, linear, tiled);
