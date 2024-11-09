@@ -84,180 +84,37 @@ pub fn Rect(comptime T: type) type {
         }
 
         pub fn toAABB(this: @This()) AABB(T) {
-            return AABB(T){
-                .min = this.topLeft(),
-                .max = .{
-                    this.pos[0] + this.size[0] - 1,
-                    this.pos[1] + this.size[1] - 1,
-                },
-            };
+            return AABB(T).fromRect(this.pos, this.size);
         }
     };
 }
 
-// Defines a rectangular region, like a `Rect`, but stores the min and max coordinates instead of the
-// position and size.
-pub fn AABB(comptime T: type) type {
-    return struct {
-        min: [2]T,
-        max: [2]T,
-
-        pub fn init(points: [2][2]T) @This() {
-            const min = .{ @min(points[0][0], points[1][0]), @min(points[0][1], points[1][1]) };
-            const max = .{ @max(points[0][0], points[1][0]), @max(points[0][1], points[1][1]) };
-            return .{
-                .min = min,
-                .max = max,
-            };
-        }
-
-        /// Converts each component T of AABB(T) to T2 and returns AABB(T2)
-        pub fn into(this: @This(), comptime T2: type) AABB(T2) {
-            const t = @typeInfo(T);
-            const t2 = @typeInfo(T2);
-            if (t2 == .Int or t == .ComptimeInt) {
-                return if (t == .Int or t == .ComptimeInt)
-                    .{
-                        .min = .{ @intCast(this.min[0]), @intCast(this.min[1]) },
-                        .max = .{ @intCast(this.max[0]), @intCast(this.max[1]) },
-                    }
-                else
-                    .{
-                        .min = .{ @intFromFloat(this.min[0]), @intFromFloat(this.min[1]) },
-                        .max = .{ @intFromFloat(this.max[0]), @intFromFloat(this.max[1]) },
-                    };
-            } else if (t2 == .Float or t == .ComptimeFloat) {
-                return if (t == .Float or t == .ComptimeFloat)
-                    .{
-                        .min = .{ @floatCast(this.min[0]), @floatCast(this.min[1]) },
-                        .max = .{ @floatCast(this.max[0]), @floatCast(this.max[1]) },
-                    }
-                else
-                    .{
-                        .min = .{ @floatFromInt(this.min[0]), @floatFromInt(this.min[1]) },
-                        .max = .{ @floatFromInt(this.max[0]), @floatFromInt(this.max[1]) },
-                    };
-            }
-        }
-
-        pub fn fromRect(rect: Rect(T)) @This() {
-            return AABB(T){
-                .min = rect.pos,
-                .max = .{
-                    rect.pos[0] + rect.size[0] - 1,
-                    rect.pos[1] + rect.size[1] - 1,
-                },
-            };
-        }
-
-        pub fn translate(this: @This(), amount: [2]T) @This() {
-            return @This(){
-                .min = [2]T{
-                    this.min[0] + amount[0],
-                    this.min[1] + amount[1],
-                },
-                .max = [2]T{
-                    this.max[0] + amount[0],
-                    this.max[1] + amount[1],
-                },
-            };
-        }
-
-        pub fn inset(this: @This(), amount: Inset(T)) @This() {
-            return @This(){
-                .min = [2]T{
-                    this.min[0] + amount.min[0],
-                    this.min[1] + amount.min[1],
-                },
-                .max = [2]T{
-                    this.max[0] - amount.max[0],
-                    this.max[1] - amount.max[1],
-                },
-            };
-        }
-
-        pub fn contains(this: @This(), point: [2]T) bool {
-            return point[0] >= this.min[0] and
-                point[1] >= this.min[1] and
-                point[0] <= this.max[0] and
-                point[1] <= this.max[1];
-        }
-
-        pub fn overlaps(this: @This(), other: @This()) bool {
-            const each_axis = .{
-                this.min[0] <= other.max[0] and this.max[0] >= other.min[0],
-                this.min[1] <= other.max[1] and this.max[1] >= other.min[1],
-            };
-            return each_axis[0] and each_axis[1];
-        }
-
-        pub fn topLeft(this: @This()) [2]T {
-            return this.min;
-        }
-
-        pub fn bottomRight(this: @This()) [2]T {
-            return this.max;
-        }
-
-        /// Gets the size as (max - min)
-        pub fn size(this: @This()) [2]T {
-            return [2]T{
-                this.max[0] - this.min[0],
-                this.max[1] - this.min[1],
-            };
-        }
-
-        /// Gets the size as (max - min) + the smallest value the child type can represent (e.g. 1 for integer, `std.math.epsilon()` for floats)
-        pub fn sizePlusEpsilon(this: @This()) [2]T {
-            const MAX = switch (@typeInfo(T)) {
-                .Int => std.math.maxInt(T),
-                .Float => std.math.inf(T),
-                else => @compileError("unsupported type " ++ @typeName(T)),
-            };
-            return .{
-                std.math.nextAfter(T, this.max[0] - this.min[0], MAX),
-                std.math.nextAfter(T, this.max[1] - this.min[1], MAX),
-            };
-        }
-
-        pub fn clamp(value: @This(), bounds: @This()) @This() {
-            std.debug.assert(value.min[0] <= value.max[0]);
-            std.debug.assert(value.min[1] <= value.max[1]);
-            std.debug.assert(bounds.min[0] <= bounds.max[0]);
-            std.debug.assert(bounds.min[1] <= bounds.max[1]);
-            return .{
-                .min = .{
-                    std.math.clamp(value.min[0], bounds.min[0], bounds.max[0]),
-                    std.math.clamp(value.min[1], bounds.min[1], bounds.max[1]),
-                },
-                .max = .{
-                    std.math.clamp(value.max[0], bounds.min[0], bounds.max[0]),
-                    std.math.clamp(value.max[1], bounds.min[1], bounds.max[1]),
-                },
-            };
-        }
-
-        pub fn pointClamp(bounds: @This(), point: [2]T) [2]T {
-            return .{
-                std.math.clamp(point[0], bounds.min[0], bounds.max[0]),
-                std.math.clamp(point[1], bounds.min[1], bounds.max[1]),
-            };
-        }
-    };
-}
-
-/// AABB type optimized for SIMD.
-/// Stores max negated to reduce instructions for intersection/union operations.
+/// # Axis Aligned Bounding Box
+///
+/// Describes a 2D region between a minimum and maximum point.
+///
+/// Optimized for SIMD, [based on the SIMD_AABB type at this link][SIMD_AABB].
+/// Stores max negated to reduce instruction count for intersection and union operations.
 /// Because of the negation, SIMD_AABB only works for signed data types.
+/// If you need to support unsigned types, use `UAABB`.
+///
 /// [SIMD_AABB]: https://gist.github.com/mtsamis/441c16f3d6fc86566eaa2a302ed247c9
-pub fn SIMD_AABB(comptime T: type) type {
+pub fn AABB(comptime T: type) type {
+    {
+        const t = @typeInfo(T);
+        comptime if (t == .Int and t.Int.signedness == .unsigned) {
+            @compileError("AABB(" ++ @typeName(T) ++ ") is not a supported type, use UAABB(" ++ @typeName(T) ++ ") instead.");
+        } else if (t != .Float and t != .Int) {
+            @compileError("AABB(" ++ @typeName(T) ++ ") is not a supported type.");
+        };
+    }
     return struct {
         /// Stores min and max as an array of 4 values with the 2 max values inverted.
         /// A direct initialization would look like this:
         /// `const simd_aabb = .{ .data = .{ min_x, min_y, -max_x, -max_y } };`
         data: @Vector(4, T),
 
-        /// Initialize from two points
+        /// Returns AABB from computed min and max of points.
         pub fn init(a: [2]T, b: [2]T) @This() {
             const min_x = @min(a[0], b[0]);
             const max_x = @max(a[0], b[0]);
@@ -271,6 +128,44 @@ pub fn SIMD_AABB(comptime T: type) type {
             } };
         }
 
+        /// Converts each T component of AABB(T) to T2 and returns AABB(T2)
+        pub fn into(this: @This(), comptime T2: type) AABB(T2) {
+            const t = @typeInfo(T);
+            const t2 = @typeInfo(T2);
+            if (t2 == .Int and t2.Int.signedness == .unsigned) {
+                return if (t == .Int)
+                    @intCast(this.data)
+                else
+                    @intFromFloat(this.data);
+            } else if (t2 == .Float) {
+                return if (t == .Float)
+                    @floatCast(this.data)
+                else
+                    @floatFromInt(this.data);
+            } else {
+                @compileError("Unsupported T2 type " ++ @typeName(T2) ++ " for AABB(" ++ @typeName(T) ++ ").into");
+            }
+        }
+
+        /// Returns an AABB(T) from position and size.
+        pub fn fromRect(pos: [2]T, _size: [2]T) @This() {
+            return AABB(T).init(pos, .{ pos[0] + _size[0] - 1, pos[1] + _size[1] - 1 });
+        }
+
+        /// Returns `this` cast to use unsigned integer values.
+        /// May cause a panic at runtime if the AABB has negative coordinates.
+        pub fn intoUAABB(this: @This(), comptime T2: type) UAABB(T2) {
+            const t = @typeInfo(T);
+            const unsign = @Vector(4, T){ this.data[0], this.data[1], -this.data[2], -this.data[3] };
+            if (t == .Int) {
+                return .{ .data = @intCast(unsign) };
+            } else if (t == .Float) {
+                return .{ .data = @intFromFloat(unsign) };
+            } else {
+                unreachable;
+            }
+        }
+
         /// Return the minimum point of the AABB as array with layout `.{ x, y }`.
         pub fn min(this: @This()) [2]T {
             return this.data[0..2];
@@ -281,6 +176,19 @@ pub fn SIMD_AABB(comptime T: type) type {
             const vec_this: @Vector(4, T) = this.data;
             const neg = -vec_this;
             return neg[2..4];
+        }
+
+        /// Returns size vector by subtracting (max - min)
+        pub fn size(this: @This()) [2]T {
+            return [2]T{
+                this.data[2] - this.data[0],
+                this.data[3] - this.data[1],
+            };
+        }
+
+        /// Returns `this` translated by `pos`.
+        pub fn translate(this: @This(), pos: [2]T) [2]T {
+            return this.data + @Vector(4, T){ pos[0], pos[1], -pos[0], -pos[1] };
         }
 
         /// Returns true if the AABBs are overlapping.
@@ -296,40 +204,180 @@ pub fn SIMD_AABB(comptime T: type) type {
         pub fn intersection(a: @This(), b: @This()) @This() {
             return .{ .data = @min(a.data, b.data) };
         }
+
+        /// Returns `point` constrained to be within `bounds`.
+        pub fn constrain(bounds: @This(), point: [2]T) [2]T {
+            return bounds.intersection(@Vector(4, T){ point[0], point[1], -point[0], -point[1] })[0..2].*;
+        }
     };
 }
 
-test "SIMD_AABB == AABB" {
-    // Checks that AABB and SIMD_AABB compute the same result for
-    // - Intersection of seperate boxes
-    // - Intersection of overlapping boxes
-    // - Overlap test of seperate boxes
-    // - Overlap test of overlapping boxes
+/// # Unsigned Axis Aligned Bounding Box
+///
+/// Describes a 2D region between a minimum and maximum point.
+///
+/// Like `AABB`, but for unsigned types. Prefer `AABB` when possible.
+pub fn UAABB(comptime T: type) type {
+    {
+        const t = @typeInfo(T);
+        if (t != .Int or (t == .Int and t.Int.signedness != .unsigned)) {
+            @compileError("Attempt to use UAABB for signed type; use `AABB(" ++ @typeName(T) ++ ")`");
+        }
+    }
+    return struct {
+        data: @Vector(4, T),
+
+        /// Returns AABB from computed min and max of points.
+        pub fn init(point1: [2]T, point2: [2]T) @This() {
+            return .{ .data = .{
+                @min(point1[0], point2[0]), @min(point1[1], point2[1]),
+                @max(point1[0], point2[0]), @max(point1[1], point2[1]),
+            } };
+        }
+
+        /// Return the minimum point of the AABB as array with layout `.{ x, y }`.
+        pub fn min(this: @This()) [2]T {
+            return this.data[0..2];
+        }
+
+        /// Return the maximum point of the AABB as array with layout `.{ x, y }`.
+        pub fn max(this: @This()) [2]T {
+            return this.data[2..4];
+        }
+
+        /// Returns an AABB(T) from position and size.
+        pub fn fromRect(pos: [2]T, _size: [2]T) @This() {
+            return AABB(T){
+                pos[0],
+                pos[1],
+                pos[0] + _size[0] - 1,
+                pos[1] + _size[1] - 1,
+            };
+        }
+
+        /// Converts each T component of UAABB(T) to T2 and returns UAABB(T2)
+        pub fn into(this: @This(), comptime T2: type) T2 {
+            return @intCast(this.data);
+        }
+
+        /// Returns `this` converted to AABB(T2)
+        pub fn intoAABB(this: @This(), comptime T2: type) T2 {
+            const t2 = @typeInfo(T2);
+            if (t2 == .Int and t2.Int.signedness == .unsigned) {
+                return @intCast(this.data);
+            } else if (t2 == .Float) {
+                return @floatFromInt(this.data);
+            } else {
+                @compileError("Unsupported T2 type " ++ @typeName(T2) ++ " for UAABB(" ++ @typeName(T) ++ ").intoAABB");
+            }
+        }
+
+        /// Returns `this` translated by pos.
+        pub fn translate(this: @This(), amount: [2]T) @This() {
+            return @This(){ .data = this.data + @Vector(4, T){ amount[0], amount[1], amount[0], amount[1] } };
+        }
+
+        /// Returns `this` inset by `amount`.
+        pub fn inset(this: @This(), amount: Inset(T)) @This() {
+            return @This(){ .data = .{
+                this.data[0] + amount.min[0],
+                this.data[1] + amount.min[1],
+                this.data[2] - amount.max[0],
+                this.data[3] - amount.max[1],
+            } };
+        }
+
+        /// Returns true if `this` contains `point`.
+        /// Returns false if `this` does not contain `point`.
+        pub fn contains(this: @This(), point: [2]T) bool {
+            return point[0] >= this.data[0] and
+                point[1] >= this.data[1] and
+                point[0] <= this.data[2] and
+                point[1] <= this.data[3];
+        }
+
+        /// Returns true if the AABBs are overlapping.
+        /// Returns false if the AABBs are not overlapping.
+        pub fn overlaps(this: @This(), other: @This()) bool {
+            const each_axis = .{
+                this.data[0] <= other.data[2] and this.data[2] >= other.data[0],
+                this.data[1] <= other.data[3] and this.data[3] >= other.data[1],
+            };
+            return each_axis[0] and each_axis[1];
+        }
+
+        /// Gets the size as (max - min)
+        pub fn size(this: @This()) [2]T {
+            return [2]T{
+                this.data[2] - this.data[0],
+                this.data[3] - this.data[1],
+            };
+        }
+
+        /// Gets the size as (max - min) + the smallest value the child type can represent (e.g. 1 for integer, `std.math.epsilon()` for floats)
+        pub fn sizePlusEpsilon(this: @This()) [2]T {
+            const MAX = switch (@typeInfo(T)) {
+                .Int => std.math.maxInt(T),
+                .Float => std.math.inf(T),
+                else => @compileError("unsupported type " ++ @typeName(T)),
+            };
+            return .{
+                std.math.nextAfter(T, this.data[2] - this.data[0], MAX),
+                std.math.nextAfter(T, this.data[3] - this.data[1], MAX),
+            };
+        }
+
+        /// Returns the area covered by both `a` and `b`.
+        pub fn intersect(value: @This(), bounds: @This()) @This() {
+            std.debug.assert(value.data[0] <= value.data[2]);
+            std.debug.assert(value.data[1] <= value.data[3]);
+            std.debug.assert(bounds.data[0] <= bounds.data[2]);
+            std.debug.assert(bounds.data[1] <= bounds.data[3]);
+            return .{
+                std.math.clamp(value.data[0], bounds.data[0], bounds.data[2]),
+                std.math.clamp(value.data[1], bounds.data[1], bounds.data[3]),
+                std.math.clamp(value.data[2], bounds.data[0], bounds.data[2]),
+                std.math.clamp(value.data[3], bounds.data[1], bounds.data[3]),
+            };
+        }
+
+        /// Returns `point` constrained to be within `bounds`.
+        pub fn constrain(bounds: @This(), point: [2]T) [2]T {
+            return .{
+                std.math.clamp(point[0], bounds.data[0], bounds.data[2]),
+                std.math.clamp(point[1], bounds.data[1], bounds.data[3]),
+            };
+        }
+    };
+}
+
+test "AABB.overlaps == UAABB.overlaps" {
+    // Checks that AABB and SIMD_AABB compute the same result for overlap tests.
     const overlapped_a = [_]f32{ 0, 0, 7.5, 7.5 };
     const overlapped_b = [_]f32{ 2.5, 2.5, 10, 10 };
     const seperate_a = [_]f32{ 0, 0, 2.5, 2.5 };
     const seperate_b = [_]f32{ 7.5, 7.5, 10, 10 };
 
-    const aabb_overlapped_a = AABB(f32).init(.{ overlapped_a[0..2].*, overlapped_a[2..4].* });
-    const aabb_overlapped_b = AABB(f32).init(.{ overlapped_b[0..2].*, overlapped_b[2..4].* });
-    const simd_aabb_overlapped_a = SIMD_AABB(f32).init(overlapped_a[0..2].*, overlapped_a[2..4].*);
-    const simd_aabb_overlapped_b = SIMD_AABB(f32).init(overlapped_b[0..2].*, overlapped_b[2..4].*);
+    const aabb_overlapped_a = AABB(f32).init(overlapped_a[0..2].*, overlapped_a[2..4].*);
+    const aabb_overlapped_b = AABB(f32).init(overlapped_b[0..2].*, overlapped_b[2..4].*);
+    const aabb_seperate_a = AABB(f32).init(seperate_a[0..2].*, seperate_a[2..4].*);
+    const aabb_seperate_b = AABB(f32).init(seperate_b[0..2].*, seperate_b[2..4].*);
 
-    const aabb_seperate_a = AABB(f32).init(.{ seperate_a[0..2].*, seperate_a[2..4].* });
-    const aabb_seperate_b = AABB(f32).init(.{ seperate_b[0..2].*, seperate_b[2..4].* });
-    const simd_aabb_seperate_a = SIMD_AABB(f32).init(seperate_a[0..2].*, seperate_a[2..4].*);
-    const simd_aabb_seperate_b = SIMD_AABB(f32).init(seperate_b[0..2].*, seperate_b[2..4].*);
+    const uaabb_overlapped_a = aabb_overlapped_a.intoUAABB(u32);
+    const uaabb_overlapped_b = aabb_overlapped_b.intoUAABB(u32);
+    const uaabb_seperate_a = aabb_seperate_a.intoUAABB(u32);
+    const uaabb_seperate_b = aabb_seperate_b.intoUAABB(u32);
 
-    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 0, 0, -7.5, -7.5 }), simd_aabb_overlapped_a.data);
-    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 2.5, 2.5, -10, -10 }), simd_aabb_overlapped_b.data);
-    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 0, 0, -2.5, -2.5 }), simd_aabb_seperate_a.data);
-    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 7.5, 7.5, -10, -10 }), simd_aabb_seperate_b.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 0, 0, -7.5, -7.5 }), aabb_overlapped_a.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 2.5, 2.5, -10, -10 }), aabb_overlapped_b.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 0, 0, -2.5, -2.5 }), aabb_seperate_a.data);
+    try std.testing.expectEqual(@as(@Vector(4, f32), .{ 7.5, 7.5, -10, -10 }), aabb_seperate_b.data);
 
-    try std.testing.expectEqual(aabb_overlapped_a.overlaps(aabb_overlapped_b), simd_aabb_overlapped_a.overlaps(simd_aabb_overlapped_b));
-    try std.testing.expectEqual(aabb_overlapped_b.overlaps(aabb_overlapped_a), simd_aabb_overlapped_b.overlaps(simd_aabb_overlapped_a));
+    try std.testing.expectEqual(uaabb_overlapped_a.overlaps(uaabb_overlapped_b), aabb_overlapped_a.overlaps(aabb_overlapped_b));
+    try std.testing.expectEqual(uaabb_overlapped_b.overlaps(uaabb_overlapped_a), aabb_overlapped_b.overlaps(aabb_overlapped_a));
 
-    try std.testing.expectEqual(aabb_seperate_a.overlaps(aabb_seperate_b), simd_aabb_seperate_a.overlaps(simd_aabb_seperate_b));
-    try std.testing.expectEqual(aabb_seperate_b.overlaps(aabb_seperate_a), simd_aabb_seperate_b.overlaps(simd_aabb_seperate_a));
+    try std.testing.expectEqual(uaabb_seperate_a.overlaps(uaabb_seperate_b), aabb_seperate_a.overlaps(aabb_seperate_b));
+    try std.testing.expectEqual(uaabb_seperate_b.overlaps(uaabb_seperate_a), aabb_seperate_b.overlaps(aabb_seperate_a));
 }
 
 /// Defines a rectangular region relative to another rectangular region. In this case the numbers
