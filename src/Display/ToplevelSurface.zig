@@ -521,8 +521,8 @@ fn executeCanvasCommand(this: *ToplevelSurface, tag: Command.Tag, data: Command.
                         ((dst_area_clamped.min[1] - dst_area.min[1]) / dst_area.size()[1]) * src_area.size()[1],
                     },
                     .max = .{
-                        ((dst_area_clamped.max[0] - dst_area.max[0]) / dst_area.size()[0]) * src_area.size()[0],
-                        ((dst_area_clamped.max[1] - dst_area.max[1]) / dst_area.size()[1]) * src_area.size()[1],
+                        ((dst_area.max[0] - dst_area_clamped.max[0]) / dst_area.size()[0]) * src_area.size()[0],
+                        ((dst_area.max[1] - dst_area_clamped.max[1]) / dst_area.size()[1]) * src_area.size()[1],
                     },
                 }),
                 *const Sampler,
