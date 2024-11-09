@@ -125,6 +125,23 @@ pub fn main() !void {
 
     try stdout.writeAll("\n");
     try bench.run(stdout);
+
+    // write final image hashes to stdout just to make sure they aren't optimized away
+    var linear_hash = std.hash.Fnv1a_128.init();
+    for (0..dst_linear_argbf32.size[1]) |y| {
+        for (0..dst_linear_argbf32.size[1]) |x| {
+            linear_hash.update(std.mem.asBytes(&dst_linear_argbf32.getPixel(.{ @intCast(x), @intCast(y) })));
+        }
+    }
+    try stdout.print("\n\nlinear hash = {x}\n", .{linear_hash.final()});
+
+    var tiled_hash = std.hash.Fnv1a_128.init();
+    for (0..dst_tiled_argbf32.size_px[1]) |y| {
+        for (0..dst_tiled_argbf32.size_px[1]) |x| {
+            tiled_hash.update(std.mem.asBytes(&dst_tiled_argbf32.getPixel(.{ @intCast(x), @intCast(y) })));
+        }
+    }
+    try stdout.print("tiled hash = {x}\n", .{tiled_hash.final()});
 }
 
 fn linearArgbF32Composite(_: std.mem.Allocator) void {
@@ -136,18 +153,17 @@ fn linearArgbF32Composite(_: std.mem.Allocator) void {
 }
 
 fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
-    dst_tiled_argbf32.set(.{ .min = .{ 0, 0 }, .max = dst_tiled_argbf32.size_px }, argbf32_premultiplied.BLACK);
+    dst_tiled_argbf32.set(.{ .min = .{ 0, 0 }, .max = .{ dst_tiled_argbf32.size_px[0] - 1, dst_tiled_argbf32.size_px[1] - 1 } }, argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
         const dst_area = seizer.geometry.AABB(u32){
             .min = pos,
             .max = .{
-                pos[0] + src_linear_argbf32.size[0],
-                pos[1] + src_linear_argbf32.size[1],
+                pos[0] + src_linear_argbf32.size[0] - 1,
+                pos[1] + src_linear_argbf32.size[1] - 1,
             },
         };
         dst_tiled_argbf32.compositeLinear(dst_area, src_linear_argbf32.asSlice());
     }
-    std.mem.doNotOptimizeAway(dst_tiled_argbf32.tiles);
 }
 
 const argb8_premul = seizer.color.argb(seizer.color.sRGB8, .premultiplied, u8);
