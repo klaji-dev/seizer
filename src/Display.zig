@@ -97,10 +97,10 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
     const xdg_surface = this.connection.sendRequest(xdg_shell.xdg_wm_base, this.globals.xdg_wm_base.?, .get_xdg_surface, .{ .surface = wl_surface.id }) catch return error.ConnectionLost;
     const xdg_toplevel = xdg_surface.sendRequest(.get_toplevel, .{}) catch return error.ConnectionLost;
 
-    // const xdg_toplevel_decoration: ?shimizu.Proxy(xdg_decoration.zxdg_toplevel_decoration_v1) = if (this.globals.xdg_decoration_manager) |deco_man|
-    //     this.connection.sendRequest(xdg_decoration.zxdg_decoration_manager_v1, deco_man, .get_toplevel_decoration, .{ .toplevel = xdg_toplevel.id }) catch return error.ConnectionLost
-    // else
-    //     null;
+    const xdg_toplevel_decoration: ?shimizu.Proxy(xdg_decoration.zxdg_toplevel_decoration_v1) = if (this.globals.xdg_decoration_manager) |deco_man|
+        this.connection.sendRequest(xdg_decoration.zxdg_decoration_manager_v1, deco_man, .get_toplevel_decoration, .{ .toplevel = xdg_toplevel.id }) catch return error.ConnectionLost
+    else
+        null;
 
     // const wp_viewport: ?shimizu.Proxy(viewporter.wp_viewport) = if (this.globals.wp_viewporter) |wp_viewporter|
     //     this.connection.sendRequest(viewporter.wp_viewporter, wp_viewporter, .get_viewport, .{ .surface = wl_surface.id }) catch return error.ConnectionLost
@@ -120,15 +120,18 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
         .wl_surface = wl_surface.id,
         .xdg_surface = xdg_surface.id,
         .xdg_toplevel = xdg_toplevel.id,
-        // .xdg_toplevel_decoration = xdg_toplevel_decoration,
-        // .wp_viewport = wp_viewport,
-        // .wp_fractional_scale = wp_fractional_scale,
 
         .xdg_surface_listener = undefined,
         .xdg_toplevel_listener = undefined,
 
         .frame_callback = null,
         .frame_callback_listener = undefined,
+
+        .xdg_toplevel_decoration = if (xdg_toplevel_decoration) |deco| deco.id else null,
+        // .wp_viewport = wp_viewport,
+        // .wp_fractional_scale = wp_fractional_scale,
+
+        .xdg_toplevel_decoration_listener = undefined,
 
         .current_configuration = .{
             .window_size = .{ 0, 0 },
@@ -161,9 +164,10 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
     xdg_surface.setEventListener(&toplevel_surface.xdg_surface_listener, ToplevelSurface.onXdgSurfaceEvent, null);
     xdg_toplevel.setEventListener(&toplevel_surface.xdg_toplevel_listener, ToplevelSurface.onXdgToplevelEvent, null);
 
-    // if (toplevel_surface.xdg_toplevel_decoration) |decoration| {
-    //     decoration.setEventListener(&toplevel_surface.xdg_toplevel_decoration_listener, ToplevelSurface.onXdgToplevelDecorationEvent, null);
-    // }
+    if (xdg_toplevel_decoration) |decoration| {
+        decoration.setEventListener(&toplevel_surface.xdg_toplevel_decoration_listener, ToplevelSurface.onXdgToplevelDecorationEvent, null);
+    }
+
     // if (toplevel_surface.wp_fractional_scale) |frac_scale| {
     //     frac_scale.setEventListener(&toplevel_surface.wp_fractional_scale_listener, ToplevelSurface.onWpFractionalScale, null);
     // }

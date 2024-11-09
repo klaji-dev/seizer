@@ -11,6 +11,9 @@ xdg_toplevel_listener: shimizu.Listener,
 frame_callback: ?shimizu.Object.WithInterface(wayland.wl_callback),
 frame_callback_listener: shimizu.Listener,
 
+xdg_toplevel_decoration: ?shimizu.Object.WithInterface(xdg_decoration.zxdg_toplevel_decoration_v1),
+xdg_toplevel_decoration_listener: shimizu.Listener,
+
 current_configuration: Configuration,
 new_configuration: Configuration,
 
@@ -60,7 +63,10 @@ pub fn deinit(this: *@This()) void {
     const xdg_toplevel: shimizu.Proxy(xdg_shell.xdg_toplevel) = .{ .connection = &this.display.connection, .id = this.xdg_toplevel };
 
     // destroy surfaces
-    // if (this.xdg_toplevel_decoration) |decoration| decoration.sendRequest(.destroy, .{}) catch {};
+    if (this.xdg_toplevel_decoration) |decoration_id| {
+        const decoration: shimizu.Proxy(xdg_decoration.zxdg_toplevel_decoration_v1) = .{ .connection = &this.display.connection, .id = decoration_id };
+        decoration.sendRequest(.destroy, .{}) catch {};
+    }
     xdg_toplevel.sendRequest(.destroy, .{}) catch {};
     xdg_surface.sendRequest(.destroy, .{}) catch {};
     wl_surface.sendRequest(.destroy, .{}) catch {};
@@ -563,12 +569,13 @@ pub fn onXdgSurfaceEvent(listener: *shimizu.Listener, xdg_surface: shimizu.Proxy
     const this: *@This() = @fieldParentPtr("xdg_surface_listener", listener);
     switch (event) {
         .configure => |conf| {
-            // if (this.xdg_toplevel_decoration) |decoration| {
-            //     if (this.current_configuration.decoration_mode != this.new_configuration.decoration_mode) {
-            //         try decoration.sendRequest(.set_mode, .{ .mode = this.new_configuration.decoration_mode });
-            //         this.current_configuration.decoration_mode = this.new_configuration.decoration_mode;
-            //     }
-            // }
+            if (this.xdg_toplevel_decoration) |decoration_id| {
+                if (this.current_configuration.decoration_mode != this.new_configuration.decoration_mode) {
+                    const decoration = shimizu.Proxy(xdg_decoration.zxdg_toplevel_decoration_v1){ .connection = &this.display.connection, .id = decoration_id };
+                    try decoration.sendRequest(.set_mode, .{ .mode = this.new_configuration.decoration_mode });
+                    this.current_configuration.decoration_mode = this.new_configuration.decoration_mode;
+                }
+            }
 
             if (!std.mem.eql(u32, &this.current_configuration.window_size, &this.new_configuration.window_size)) {
                 this.current_configuration.window_size = this.new_configuration.window_size;
@@ -622,17 +629,17 @@ pub fn onXdgToplevelEvent(listener: *shimizu.Listener, xdg_toplevel: shimizu.Pro
     }
 }
 
-// fn onXdgToplevelDecorationEvent(listener: *shimizu.Listener, xdg_toplevel_decoration: shimizu.Proxy(xdg_decoration.zxdg_toplevel_decoration_v1), event: xdg_decoration.zxdg_toplevel_decoration_v1.Event) !void {
-//     const this: *@This() = @fieldParentPtr("xdg_toplevel_decoration_listener", listener);
-//     _ = xdg_toplevel_decoration;
-//     switch (event) {
-//         .configure => |cfg| {
-//             if (cfg.mode == .server_side) {
-//                 this.new_configuration.decoration_mode = .server_side;
-//             }
-//         },
-//     }
-// }
+pub fn onXdgToplevelDecorationEvent(listener: *shimizu.Listener, xdg_toplevel_decoration: shimizu.Proxy(xdg_decoration.zxdg_toplevel_decoration_v1), event: xdg_decoration.zxdg_toplevel_decoration_v1.Event) !void {
+    const this: *@This() = @fieldParentPtr("xdg_toplevel_decoration_listener", listener);
+    _ = xdg_toplevel_decoration;
+    switch (event) {
+        .configure => |cfg| {
+            if (cfg.mode == .server_side) {
+                this.new_configuration.decoration_mode = .server_side;
+            }
+        },
+    }
+}
 
 // fn onWpFractionalScale(listener: *shimizu.Listener, wp_fractional_scale: shimizu.Proxy(fractional_scale_v1.wp_fractional_scale_v1), event: fractional_scale_v1.wp_fractional_scale_v1.Event) !void {
 //     const this: *@This() = @fieldParentPtr("wp_fractional_scale_listener", listener);
