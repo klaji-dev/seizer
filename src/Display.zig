@@ -151,15 +151,7 @@ pub fn initToplevelSurface(this: *@This(), toplevel_surface: *ToplevelSurface, o
         .close_listener = null,
         .on_render_listener = null,
         .on_input_listener = null,
-
-        .command = .{},
-        .command_hash = .{},
-        .command_hash_prev = .{},
     };
-
-    try toplevel_surface.command.ensureTotalCapacity(this.allocator, 1024);
-    try toplevel_surface.command_hash.ensureTotalCapacity(this.allocator, 2048); // enough room for 4k stuff
-    try toplevel_surface.command_hash_prev.ensureTotalCapacity(this.allocator, 2048); // enough room for 4k stuff
 
     xdg_surface.setEventListener(&toplevel_surface.xdg_surface_listener, ToplevelSurface.onXdgSurfaceEvent, null);
     xdg_toplevel.setEventListener(&toplevel_surface.xdg_toplevel_listener, ToplevelSurface.onXdgToplevelEvent, null);
