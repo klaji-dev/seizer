@@ -192,11 +192,11 @@ pub fn canvas_size(this_opaque: ?*anyopaque) [2]f64 {
     return .{ @floatFromInt(this.current_configuration.window_size[0]), @floatFromInt(this.current_configuration.window_size[1]) };
 }
 
-fn canvas_clip(this: *@This()) seizer.geometry.AABB(u32) {
-    return seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = .{
+fn canvas_clip(this: *@This()) seizer.geometry.UAABB(u32) {
+    return seizer.geometry.UAABB(u32).init(.{ 0, 0 }, .{
         this.current_configuration.window_size[0] - 1,
         this.current_configuration.window_size[1] - 1,
-    } };
+    });
 }
 
 pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premultiplied) void {
@@ -207,11 +207,10 @@ pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premul
 pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.image.Slice(seizer.color.argbf32_premultiplied)) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
 
-    var rect = seizer.geometry.Rect(f64){ .pos = pos, .size = seizer.geometry.vec.into(f64, src_image.size) };
-    rect = rect.translate(pos);
+    const area = seizer.geometry.AABB(f64).fromRect(pos, seizer.geometry.vec.into(f64, src_image.size));
 
-    const pos_i = rect.toAABB().into(i32).min;
-    const size_i = rect.toAABB().into(i32).size();
+    const pos_i = area.into(i32).min();
+    const size_i = area.into(i32).size();
 
     if (pos_i[0] + size_i[0] <= 0 or pos_i[1] + size_i[1] <= 0) return;
     if (pos_i[0] >= size_i[0] or pos_i[1] >= size_i[1]) return;
@@ -225,21 +224,17 @@ pub fn canvas_blit(this_opaque: ?*anyopaque, pos: [2]f64, src_image: seizer.imag
         if (pos_i[0] < 0) @intCast(-pos_i[0]) else 0,
         if (pos_i[1] < 0) @intCast(-pos_i[1]) else 0,
     };
-    // const dest_offset = [2]u32{
-    //     @intCast(@max(pos_i[0], 0)),
-    //     @intCast(@max(pos_i[1], 0)),
-    // };
 
     const src = src_image.slice(src_offset, src_size);
 
-    this.framebuffer.compositeLinear(rect.toAABB().into(u32), src);
+    this.framebuffer.compositeLinear(area.intoUAABB(u32), src);
 }
 
 pub fn canvas_fillRect(this_opaque: ?*anyopaque, area: seizer.geometry.AABB(f64), color: seizer.color.argbf32_premultiplied, options: seizer.Canvas.FillRectOptions) void {
     const this: *@This() = @ptrCast(@alignCast(this_opaque));
     _ = options;
 
-    const area_u = area.into(u32);
+    const area_u = area.intoUAABB(u32);
 
     this.framebuffer.drawFillRect(area_u, color);
 }
@@ -252,11 +247,11 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AA
 
     const color = options.color;
     const clip = this.canvas_clip();
-    const dst_area_clamped = dst_area.clamp(clip.into(f64));
-    const src_area = seizer.geometry.AABB(f64){
-        .min = .{ 0, 0 },
-        .max = .{ @floatFromInt(src_image.size[0] - 1), @floatFromInt(src_image.size[1] - 1) },
-    };
+    const dst_area_clamped = dst_area.intersection(clip.intoAABB(f64));
+    const src_area = seizer.geometry.AABB(f64).init(
+        .{ 0, 0 },
+        .{ @floatFromInt(src_image.size[0] - 1), @floatFromInt(src_image.size[1] - 1) },
+    );
 
     const Sampler = struct {
         texture: seizer.image.Slice(seizer.color.argbf32_premultiplied),
@@ -274,16 +269,16 @@ pub fn canvas_textureRect(this_opaque: ?*anyopaque, dst_area: seizer.geometry.AA
     this.framebuffer.compositeSampler(
         clip,
         f64,
-        src_area.inset(.{
-            .min = .{
-                ((dst_area_clamped.min[0] - dst_area.min[0]) / dst_area.size()[0]) * src_area.size()[0],
-                ((dst_area_clamped.min[1] - dst_area.min[1]) / dst_area.size()[1]) * src_area.size()[1],
+        src_area.inset(seizer.geometry.Inset(f64).init(
+            .{
+                ((dst_area_clamped.min()[0] - dst_area.min()[0]) / dst_area.size()[0]) * src_area.size()[0],
+                ((dst_area_clamped.min()[1] - dst_area.min()[1]) / dst_area.size()[1]) * src_area.size()[1],
             },
-            .max = .{
-                ((dst_area.max[0] - dst_area_clamped.max[0]) / dst_area.size()[0]) * src_area.size()[0],
-                ((dst_area.max[1] - dst_area_clamped.max[1]) / dst_area.size()[1]) * src_area.size()[1],
+            .{
+                ((dst_area.max()[0] - dst_area_clamped.max()[0]) / dst_area.size()[0]) * src_area.size()[0],
+                ((dst_area.max()[1] - dst_area_clamped.max()[1]) / dst_area.size()[1]) * src_area.size()[1],
             },
-        }),
+        )),
         *const Sampler,
         Sampler.sample,
         &.{

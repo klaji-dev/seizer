@@ -153,15 +153,15 @@ fn linearArgbF32Composite(_: std.mem.Allocator) void {
 }
 
 fn tiled16x16ArgbF32CompositeLinear(_: std.mem.Allocator) void {
-    dst_tiled_argbf32.set(.{ .min = .{ 0, 0 }, .max = .{ dst_tiled_argbf32.size_px[0] - 1, dst_tiled_argbf32.size_px[1] - 1 } }, argbf32_premultiplied.BLACK);
+    dst_tiled_argbf32.set(seizer.geometry.UAABB(u32).init(.{ 0, 0 }, .{ dst_tiled_argbf32.size_px[0] - 1, dst_tiled_argbf32.size_px[1] - 1 }), argbf32_premultiplied.BLACK);
     for (ops_pos) |pos| {
-        const dst_area = seizer.geometry.AABB(u32){
-            .min = pos,
-            .max = .{
+        const dst_area = seizer.geometry.UAABB(u32).init(
+            pos,
+            .{
                 pos[0] + src_linear_argbf32.size[0] - 1,
                 pos[1] + src_linear_argbf32.size[1] - 1,
             },
-        };
+        );
         dst_tiled_argbf32.compositeLinear(dst_area, src_linear_argbf32.asSlice());
     }
 }

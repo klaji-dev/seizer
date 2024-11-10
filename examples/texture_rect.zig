@@ -34,10 +34,10 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
     canvas.clear(.{ .r = 0.5, .g = 0.5, .b = 0.7, .a = 1.0 });
 
     canvas.textureRect(
-        .{
-            .min = .{ 50, 50 },
-            .max = .{ @max(canvas.size()[0] - 50, 0), @max(canvas.size()[1] - 50, 0) },
-        },
+        seizer.geometry.AABB(f64).init(
+            .{ 50, 50 },
+            .{ @max(canvas.size()[0] - 50, 0), @max(canvas.size()[1] - 50, 0) },
+        ),
         image.asSlice(),
         .{},
     );

@@ -103,17 +103,17 @@ pub const NinePatch = struct {
         const bot = image_sizef[1] - this.inset.max[1];
         return [9]seizer.geometry.AABB(f64){
             // Inside first
-            .{ .min = this.inset.min, .max = .{ right, bot } },
+            seizer.geometry.AABB(f64).init(this.inset.min, .{ right, bot }),
             // Edges second
-            .{ .min = .{ left, 0 }, .max = .{ right, top } }, // top
-            .{ .min = .{ 0, top }, .max = .{ left, bot } }, // left
-            .{ .min = .{ right, top }, .max = .{ image_sizef[0], bot } }, // right
-            .{ .min = .{ left, bot }, .max = .{ right, image_sizef[1] } }, // bottom
+            seizer.geometry.AABB(f64).init(.{ left, 0 }, .{ right, top }), // top
+            seizer.geometry.AABB(f64).init(.{ 0, top }, .{ left, bot }), // left
+            seizer.geometry.AABB(f64).init(.{ right, top }, .{ image_sizef[0], bot }), // right
+            seizer.geometry.AABB(f64).init(.{ left, bot }, .{ right, image_sizef[1] }), // bottom
             // Corners third
-            .{ .min = .{ 0, 0 }, .max = .{ left, top } }, // top left
-            .{ .min = .{ right, 0 }, .max = .{ image_sizef[0], top } }, // top right
-            .{ .min = .{ 0, bot }, .max = .{ left, image_sizef[1] } }, // bottom left
-            .{ .min = .{ right, bot }, .max = image_sizef }, // bottom right
+            seizer.geometry.AABB(f64).init(.{ 0, 0 }, .{ left, top }), // top left
+            seizer.geometry.AABB(f64).init(.{ right, 0 }, .{ image_sizef[0], top }), // top right
+            seizer.geometry.AABB(f64).init(.{ 0, bot }, .{ left, image_sizef[1] }), // bottom left
+            seizer.geometry.AABB(f64).init(.{ right, bot }, image_sizef), // bottom right
         };
     }
 };
@@ -122,21 +122,21 @@ pub fn ninePatch(this: @This(), area: geometry.AABB(f64), image: seizer.image.Sl
     const image_areas = NinePatch.imageAreas(.{ .image = image, .inset = inset });
     const scaled_inset = inset.scale(options.scale);
 
-    const x: [4]f64 = .{ area.min[0], area.min[0] + scaled_inset.min[0], area.max[0] - scaled_inset.min[0], area.max[0] };
-    const y: [4]f64 = .{ area.min[1], area.min[1] + scaled_inset.min[1], area.max[1] - scaled_inset.min[1], area.max[1] };
+    const x: [4]f64 = .{ area.min()[0], area.min()[0] + scaled_inset.min[0], area.max()[0] - scaled_inset.min[0], area.max()[0] };
+    const y: [4]f64 = .{ area.min()[1], area.min()[1] + scaled_inset.min[1], area.max()[1] - scaled_inset.min[1], area.max()[1] };
 
     // Inside first
-    this.textureRect(.{ .min = .{ x[1], y[1] }, .max = .{ x[2], y[2] } }, image, .{ .src_area = image_areas[0], .depth = options.depth, .color = options.color });
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[1], y[1] }, .{ x[2], y[2] }), image, .{ .src_area = image_areas[0], .depth = options.depth, .color = options.color });
     // Edges second
-    this.textureRect(.{ .min = .{ x[1], y[0] }, .max = .{ x[2], y[1] } }, image, .{ .src_area = image_areas[1], .depth = options.depth, .color = options.color }); // top
-    this.textureRect(.{ .min = .{ x[0], y[1] }, .max = .{ x[1], y[2] } }, image, .{ .src_area = image_areas[2], .depth = options.depth, .color = options.color }); // left
-    this.textureRect(.{ .min = .{ x[2], y[1] }, .max = .{ x[3], y[2] } }, image, .{ .src_area = image_areas[3], .depth = options.depth, .color = options.color }); // right
-    this.textureRect(.{ .min = .{ x[1], y[2] }, .max = .{ x[2], y[3] } }, image, .{ .src_area = image_areas[4], .depth = options.depth, .color = options.color }); // bottom
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[1], y[0] }, .{ x[2], y[1] }), image, .{ .src_area = image_areas[1], .depth = options.depth, .color = options.color }); // top
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[0], y[1] }, .{ x[1], y[2] }), image, .{ .src_area = image_areas[2], .depth = options.depth, .color = options.color }); // left
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[2], y[1] }, .{ x[3], y[2] }), image, .{ .src_area = image_areas[3], .depth = options.depth, .color = options.color }); // right
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[1], y[2] }, .{ x[2], y[3] }), image, .{ .src_area = image_areas[4], .depth = options.depth, .color = options.color }); // bottom
     // Corners third
-    this.textureRect(.{ .min = .{ x[0], y[0] }, .max = .{ x[1], y[1] } }, image, .{ .src_area = image_areas[5], .depth = options.depth, .color = options.color }); // top left
-    this.textureRect(.{ .min = .{ x[2], y[0] }, .max = .{ x[3], y[0] } }, image, .{ .src_area = image_areas[6], .depth = options.depth, .color = options.color }); // top right
-    this.textureRect(.{ .min = .{ x[0], y[2] }, .max = .{ x[1], y[3] } }, image, .{ .src_area = image_areas[7], .depth = options.depth, .color = options.color }); // bottom left
-    this.textureRect(.{ .min = .{ x[2], y[2] }, .max = .{ x[3], y[3] } }, image, .{ .src_area = image_areas[8], .depth = options.depth, .color = options.color }); // bottom right
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[0], y[0] }, .{ x[1], y[1] }), image, .{ .src_area = image_areas[5], .depth = options.depth, .color = options.color }); // top left
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[2], y[0] }, .{ x[3], y[0] }), image, .{ .src_area = image_areas[6], .depth = options.depth, .color = options.color }); // top right
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[0], y[2] }, .{ x[1], y[3] }), image, .{ .src_area = image_areas[7], .depth = options.depth, .color = options.color }); // bottom left
+    this.textureRect(seizer.geometry.AABB(f64).init(.{ x[2], y[2] }, .{ x[3], y[3] }), image, .{ .src_area = image_areas[8], .depth = options.depth, .color = options.color }); // bottom right
 }
 
 pub const TextOptions = struct {
@@ -242,16 +242,16 @@ const WriteGlyphContext = struct {
 fn writeGlyph(ctx: WriteGlyphContext, item: Font.TextLayout.Item) void {
     const image = ctx.font.pages.get(item.glyph.page) orelse return;
     ctx.canvas.textureRect(
-        .{
-            .min = item.pos,
-            .max = .{
+        seizer.geometry.AABB(f64).init(
+            item.pos,
+            .{
                 item.pos[0] + item.size[0],
                 item.pos[1] + item.size[1],
             },
-        },
+        ),
         image.slice(.{ 0, 0 }, image.size),
         .{
-            .src_area = seizer.geometry.AABB(f64).fromRect(.{ .pos = item.glyph.pos, .size = item.glyph.size }),
+            .src_area = seizer.geometry.AABB(f64).fromRect(item.glyph.pos, item.glyph.size),
             .color = ctx.options.color,
         },
     );
@@ -286,7 +286,7 @@ pub const RenderCache = struct {
 
     const Command = struct {
         tag: Tag,
-        renderRect: seizer.geometry.AABB(u32),
+        renderRect: seizer.geometry.UAABB(u32),
         renderData: Data,
 
         const Tag = enum {
@@ -322,7 +322,7 @@ pub const RenderCache = struct {
                 color: seizer.color.argbf32_premultiplied,
             },
             rect_clear: struct {
-                area: seizer.geometry.AABB(u32),
+                area: seizer.geometry.UAABB(u32),
                 color: seizer.color.argbf32_premultiplied,
             },
 
@@ -354,7 +354,7 @@ pub const RenderCache = struct {
 
     pub fn canvas_clear(this_opaque: ?*anyopaque, color: seizer.color.argbf32_premultiplied) void {
         const this: *@This() = @ptrCast(@alignCast(this_opaque));
-        const area = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = this.current_configuration.window_size };
+        const area = seizer.geometry.UAABB(u32).init(.{ 0, 0 }, this.current_configuration.window_size);
 
         const index = this.command.addOneAssumeCapacity();
 
@@ -390,9 +390,9 @@ pub const RenderCache = struct {
 
         this.command.appendAssumeCapacity(.{
             .tag = .rect_fill,
-            .renderRect = area.clamp(canvas_clip).into(u32),
+            .renderRect = area.intersection(canvas_clip).intoUAABB(u32),
             .renderData = .{ .rect_fill = .{
-                .area = area.clamp(canvas_clip),
+                .area = area.intersection(canvas_clip),
                 .color = color,
             } },
         });
@@ -406,7 +406,7 @@ pub const RenderCache = struct {
             @floatFromInt(this.current_configuration.window_size[1] - 1),
         } };
 
-        var render_rect = dst_area.clamp(canvas_clip).into(u32);
+        var render_rect = dst_area.intersection(canvas_clip).intoUAABB(u32);
         render_rect.min[0] -|= 1;
         render_rect.min[1] -|= 1;
         render_rect.max[0] +|= 1;
@@ -436,10 +436,10 @@ pub const RenderCache = struct {
         const width: f32 = @floatCast(options.width);
         const end_width: f32 = @floatCast(options.end_width orelse width);
 
-        const canvas_clip = seizer.geometry.AABB(u32){ .min = .{ 0, 0 }, .max = .{
+        const canvas_clip = seizer.geometry.UAABB(u32).init(.{ 0, 0 }, .{
             this.current_configuration.window_size[0] - 1,
             this.current_configuration.window_size[1] - 1,
-        } };
+        });
         const rmax = @max(width, end_width);
         const area_line = seizer.geometry.AABB(f32).init(.{ .{
             @floor(@min(start_f[0], end_f[0]) - rmax),
@@ -448,7 +448,7 @@ pub const RenderCache = struct {
             @ceil(@max(start_f[0], end_f[0]) + rmax),
             @ceil(@max(start_f[1], end_f[1]) + rmax),
         } });
-        const clipped = area_line.clamp(canvas_clip.into(f32)).into(u32);
+        const clipped = area_line.intersection(canvas_clip.intoAABB(f32)).intoUAABB(u32);
 
         this.command.appendAssumeCapacity(.{
             .tag = .line,
@@ -500,10 +500,10 @@ pub const RenderCache = struct {
             }
         }
 
-        const canvas_clip = seizer.geometry.AABB(u32){
-            .min = .{ 0, 0 },
-            .max = .{ this.current_configuration.window_size[0] - 1, this.current_configuration.window_size[1] - 1 },
-        };
+        const canvas_clip = seizer.geometry.UAABB(u32).init(
+            .{ 0, 0 },
+            .{ this.current_configuration.window_size[0] - 1, this.current_configuration.window_size[1] - 1 },
+        );
         if (this.command_hash.items.len == this.command_hash_prev.items.len) {
             // See if the we can skip rendering
             for (this.command_hash.items, this.command_hash_prev.items, 0..) |*h, *hp, i| {
@@ -534,7 +534,7 @@ pub const RenderCache = struct {
         this.command.shrinkRetainingCapacity(0);
     }
 
-    fn executeCanvasCommand(this: *@This(), tag: Command.Tag, data: Command.Data, clip: seizer.geometry.AABB(u32)) void {
+    fn executeCanvasCommand(this: *@This(), tag: Command.Tag, data: Command.Data, clip: seizer.geometry.UAABB(u32)) void {
         switch (tag) {
             .blit => {
                 const pos = data.blit.pos;
@@ -589,7 +589,7 @@ pub const RenderCache = struct {
 
                 std.debug.assert(dst_area.sizePlusEpsilon()[0] >= 0 and dst_area.sizePlusEpsilon()[1] >= 0);
 
-                const dst_area_clamped = dst_area.clamp(clip.into(f64));
+                const dst_area_clamped = dst_area.clamp(clip.intoAABB(f64));
 
                 const Sampler = struct {
                     texture: seizer.image.Slice(seizer.color.argbf32_premultiplied),
@@ -605,7 +605,7 @@ pub const RenderCache = struct {
                 };
 
                 this.framebuffer.compositeSampler(
-                    dst_area_clamped.into(u32),
+                    dst_area_clamped.intoUAABB(u32),
                     f64,
                     src_area.inset(.{
                         .min = .{
@@ -629,11 +629,11 @@ pub const RenderCache = struct {
                 const area = data.rect_fill.area;
                 const color = data.rect_fill.color;
 
-                this.framebuffer.drawFillRect(area.into(u32), color);
+                this.framebuffer.drawFillRect(area.intoUAABB(u32), color);
             },
             .rect_clear => {
                 const d = data.rect_clear;
-                this.framebuffer.set(d.area.clamp(clip), d.color);
+                this.framebuffer.set(d.area.intersection(clip), d.color);
             },
             .rect_stroke => {
                 // TODO

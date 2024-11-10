@@ -132,11 +132,11 @@ pub fn AABB(comptime T: type) type {
         pub fn into(this: @This(), comptime T2: type) AABB(T2) {
             const t = @typeInfo(T);
             const t2 = @typeInfo(T2);
-            if (t2 == .Int and t2.Int.signedness == .unsigned) {
+            if (t2 == .Int and t2.Int.signedness == .signed) {
                 return if (t == .Int)
-                    @intCast(this.data)
+                    .{ .data = @intCast(this.data) }
                 else
-                    @intFromFloat(this.data);
+                    .{ .data = @intFromFloat(this.data) };
             } else if (t2 == .Float) {
                 return if (t == .Float)
                     @floatCast(this.data)
@@ -166,16 +166,25 @@ pub fn AABB(comptime T: type) type {
             }
         }
 
+        /// Returns true if `this` contains `point`.
+        /// Returns false if `this` does not contain `point`.
+        pub fn contains(this: @This(), point: [2]T) bool {
+            return point[0] >= this.data[0] and
+                point[1] >= this.data[1] and
+                point[0] <= this.data[2] and
+                point[1] <= this.data[3];
+        }
+
         /// Return the minimum point of the AABB as array with layout `.{ x, y }`.
         pub fn min(this: @This()) [2]T {
-            return this.data[0..2];
+            return .{ this.data[0], this.data[1] };
         }
 
         /// Return the maximum point of the AABB as array with layout `.{ x, y }`.
         pub fn max(this: @This()) [2]T {
             const vec_this: @Vector(4, T) = this.data;
             const neg = -vec_this;
-            return neg[2..4];
+            return .{ neg[2], neg[3] };
         }
 
         /// Returns size vector by subtracting (max - min)
@@ -186,9 +195,32 @@ pub fn AABB(comptime T: type) type {
             };
         }
 
+        /// Gets the size as (max - min) + the smallest value the child type can represent (e.g. 1 for integer, `std.math.epsilon()` for floats)
+        pub fn sizePlusEpsilon(this: @This()) [2]T {
+            const MAX = switch (@typeInfo(T)) {
+                .Int => std.math.maxInt(T),
+                .Float => std.math.inf(T),
+                else => @compileError("unsupported type " ++ @typeName(T)),
+            };
+            return .{
+                std.math.nextAfter(T, this.data[2] - this.data[0], MAX),
+                std.math.nextAfter(T, this.data[3] - this.data[1], MAX),
+            };
+        }
+
         /// Returns `this` translated by `pos`.
         pub fn translate(this: @This(), pos: [2]T) [2]T {
             return this.data + @Vector(4, T){ pos[0], pos[1], -pos[0], -pos[1] };
+        }
+
+        /// Returns `this` inset by `amount`.
+        pub fn inset(this: @This(), amount: Inset(T)) @This() {
+            return @This(){ .data = .{
+                this.data[0] + amount.min[0],
+                this.data[1] + amount.min[1],
+                this.data[2] + amount.max[0],
+                this.data[3] + amount.max[1],
+            } };
         }
 
         /// Returns true if the AABBs are overlapping.
@@ -237,12 +269,12 @@ pub fn UAABB(comptime T: type) type {
 
         /// Return the minimum point of the AABB as array with layout `.{ x, y }`.
         pub fn min(this: @This()) [2]T {
-            return this.data[0..2];
+            return .{ this.data[0], this.data[1] };
         }
 
         /// Return the maximum point of the AABB as array with layout `.{ x, y }`.
         pub fn max(this: @This()) [2]T {
-            return this.data[2..4];
+            return .{ this.data[2], this.data[3] };
         }
 
         /// Returns an AABB(T) from position and size.
@@ -256,17 +288,17 @@ pub fn UAABB(comptime T: type) type {
         }
 
         /// Converts each T component of UAABB(T) to T2 and returns UAABB(T2)
-        pub fn into(this: @This(), comptime T2: type) T2 {
+        pub fn into(this: @This(), comptime T2: type) UAABB(T2) {
             return @intCast(this.data);
         }
 
         /// Returns `this` converted to AABB(T2)
-        pub fn intoAABB(this: @This(), comptime T2: type) T2 {
+        pub fn intoAABB(this: @This(), comptime T2: type) AABB(T2) {
             const t2 = @typeInfo(T2);
             if (t2 == .Int and t2.Int.signedness == .unsigned) {
-                return @intCast(this.data);
+                return .{ .data = @intCast(this.data) };
             } else if (t2 == .Float) {
-                return @floatFromInt(this.data);
+                return .{ .data = @floatFromInt(this.data) };
             } else {
                 @compileError("Unsupported T2 type " ++ @typeName(T2) ++ " for UAABB(" ++ @typeName(T) ++ ").intoAABB");
             }
@@ -318,7 +350,6 @@ pub fn UAABB(comptime T: type) type {
         pub fn sizePlusEpsilon(this: @This()) [2]T {
             const MAX = switch (@typeInfo(T)) {
                 .Int => std.math.maxInt(T),
-                .Float => std.math.inf(T),
                 else => @compileError("unsupported type " ++ @typeName(T)),
             };
             return .{
@@ -393,6 +424,13 @@ pub fn Inset(comptime T: type) type {
             return .{
                 .min = .{ x, y },
                 .max = .{ x, y },
+            };
+        }
+
+        pub fn init(min: [2]T, max: [2]T) @This() {
+            return .{
+                .min = min,
+                .max = max,
             };
         }
 

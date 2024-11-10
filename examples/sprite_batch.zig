@@ -135,12 +135,12 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
 
     for (sprites.items(.pos), sprites.items(.size)) |pos, size| {
         canvas.fillRect(
-            .{ .min = pos, .max = .{ pos[0] + size[0], pos[1] + size[1] } },
+            seizer.geometry.AABB(f64).init(pos, .{ pos[0] + size[0], pos[1] + size[1] }),
             seizer.color.argbf32_premultiplied.TRANSPARENT,
             .{},
         );
         canvas.textureRect(
-            .{ .min = pos, .max = .{ pos[0] + size[0], pos[1] + size[1] } },
+            seizer.geometry.AABB(f64).init(pos, .{ pos[0] + size[0], pos[1] + size[1] }),
             player_image.asSlice(),
             .{},
         );

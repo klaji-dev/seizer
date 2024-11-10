@@ -69,7 +69,7 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
 
     // // render the image twice, once with the regular shader and one with our colormapping shader
     // regular_canvas_rendering.rect(.{ 0, 0 }, .{ 480, 480 }, .{ .texture = texture });
-    canvas.textureRect(.{ .min = .{ 0, 0 }, .max = .{ 480, 480 } }, image.asSlice(), .{});
+    canvas.textureRect(seizer.geometry.AABB(f64).init(.{ 0, 0 }, .{ 480, 480 }), image.asSlice(), .{});
     // colormap_canvas_rendering.rect(.{ 480, 0 }, .{ 480, 480 }, .{ .texture = texture });
 
     try surface.present();

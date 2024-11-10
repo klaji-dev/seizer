@@ -19,7 +19,7 @@ pub const TransformedRect = struct {
     pub fn transformWithTranslation(this: @This()) [4][4]f64 {
         return seizer.geometry.mat4.mul(
             f64,
-            seizer.geometry.mat4.translate(f64, .{ -this.rect.min[0], -this.rect.min[1], 0 }),
+            seizer.geometry.mat4.translate(f64, .{ -this.rect.min()[0], -this.rect.min()[1], 0 }),
             this.transform,
         );
     }

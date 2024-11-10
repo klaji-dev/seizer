@@ -182,8 +182,8 @@ fn render(this: *@This(), canvas: Canvas, rect: AABB) void {
     }
 
     _ = canvas.writeText(style.text_font, .{
-        rect.min[0] + style.padding.min[0],
-        rect.min[1] + style.padding.min[1],
+        rect.min()[0] + style.padding.min[0],
+        rect.min()[1] + style.padding.min[1],
     }, this.text.items, .{
         .scale = style.text_scale,
         .color = style.text_color,

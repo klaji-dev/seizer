@@ -51,9 +51,9 @@ fn onRender(listener: *seizer.Display.ToplevelSurface.OnRenderListener, surface:
         sizef[1] * 2.0 / 3.0,
         sizef[1],
     };
-    canvas.textureRect(.{ .min = .{ 0, y[0] }, .max = .{ sizef[0], y[1] } }, bicubic_downscale.asSlice(), .{});
-    canvas.textureRect(.{ .min = .{ 0, y[1] }, .max = .{ sizef[0], y[2] } }, image.asSlice(), .{});
-    canvas.textureRect(.{ .min = .{ 0, y[2] }, .max = .{ sizef[0], y[3] } }, bicubic_upscale.asSlice(), .{});
+    canvas.textureRect(seizer.geometry.AABB(f64).init(.{ 0, y[0] }, .{ sizef[0], y[1] }), bicubic_downscale.asSlice(), .{});
+    canvas.textureRect(seizer.geometry.AABB(f64).init(.{ 0, y[1] }, .{ sizef[0], y[2] }), image.asSlice(), .{});
+    canvas.textureRect(seizer.geometry.AABB(f64).init(.{ 0, y[2] }, .{ sizef[0], y[3] }), bicubic_upscale.asSlice(), .{});
 
     try surface.present();
 }

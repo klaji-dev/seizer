@@ -4,7 +4,7 @@ parent: ?Element = null,
 style: ui.Style,
 
 child: ?Element = null,
-child_rect: AABB = .{ .min = .{ 0, 0 }, .max = .{ 0, 0 } },
+child_rect: AABB = AABB.init(.{ 0, 0 }, .{ 0, 0 }),
 
 pub fn create(stage: *ui.Stage) !*@This() {
     const this = try stage.gpa.create(@This());
@@ -76,16 +76,16 @@ fn element_getChildRect(this: *@This(), child: Element) ?Element.TransformedRect
     if (this.parent) |parent| {
         if (parent.getChildRect(this.element())) |parent_rect_transform| {
             return .{
-                .rect = .{
-                    .min = .{
-                        parent_rect_transform.rect.min[0] + this.child_rect.min[0],
-                        parent_rect_transform.rect.min[1] + this.child_rect.min[1],
+                .rect = AABB.init(
+                    .{
+                        parent_rect_transform.rect.min()[0] + this.child_rect.min()[0],
+                        parent_rect_transform.rect.min()[1] + this.child_rect.min()[1],
                     },
-                    .max = .{
-                        parent_rect_transform.rect.min[0] + this.child_rect.max[0],
-                        parent_rect_transform.rect.min[1] + this.child_rect.max[1],
+                    .{
+                        parent_rect_transform.rect.min()[0] + this.child_rect.max()[0],
+                        parent_rect_transform.rect.min()[1] + this.child_rect.max()[1],
                     },
-                },
+                ),
                 .transform = parent_rect_transform.transform,
             };
         }
@@ -100,8 +100,8 @@ fn processEvent(this: *@This(), event: seizer.input.Event) ?Element {
     if (this.child == null) return null;
 
     const child_event = event.transform(seizer.geometry.mat4.translate(f64, .{
-        -this.child_rect.min[0],
-        -this.child_rect.min[1],
+        -this.child_rect.min()[0],
+        -this.child_rect.min()[1],
         0,
     }));
 
@@ -143,13 +143,13 @@ pub fn layout(this: *@This(), min_size: [2]f64, max_size: [2]f64) [2]f64 {
             max_size[0] - padding_size[0],
             max_size[1] - padding_size[1],
         });
-        this.child_rect = .{
-            .min = this.style.padding.min,
-            .max = .{
+        this.child_rect = AABB.init(
+            this.style.padding.min,
+            .{
                 this.style.padding.min[0] + child_size[0],
                 this.style.padding.min[1] + child_size[1],
             },
-        };
+        );
         return .{
             child_size[0] + padding_size[0],
             child_size[1] + padding_size[1],
